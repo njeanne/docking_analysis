@@ -11,11 +11,13 @@ chainA: # mandatory
       color: <LIST RGB>
   mutations: # optional
     alterations: # optional
-      # reset positions in the chain depending if deletion or insertions events happens to match with the reference
-      # genome where the mutations are listed
-      7: -3 # insertion event of 3 residues in chainA compared to the reference listing the mutations, -3 will be applied from position 7 to the end of chainA
-      24: 4 # deletion event of 4 residues in chainA compared to the reference listing the mutations, +4 will be applied from position 24 to the end of chainA
-      417: 1 # deletion event of 1 residue in chainA compared to the reference listing the mutations, +1 will be applied from position 417 to the end of chainA
+      # reset positions in the chain depending if deletion or insertions events happens compared to the reference
+      # genome where the mutations are listed:
+      #   for deletions, a positive number of the count of deleted residues. i.e del24-27, 24: 4
+      #   for insertions, a negative number of the count of inserted residues. i.e 215insAPE: 215: -3
+      <EVENT1 POSITION>: <ALTERATION1 VALUE>
+      <EVENT2 POSITION>: <ALTERATION2 VALUE>
+      ...
     positions: # mutation positions index on the reference genome
       - <POSITION MUTATION 1>
       - <POSITION MUTATION 2>

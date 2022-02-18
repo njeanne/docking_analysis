@@ -19,6 +19,9 @@ from Bio import PDB
 from pymol import cmd
 import yaml
 
+sys.path.insert(0, "references")
+import interfaceResidues
+
 
 def create_log(path, level):
     """Create the log as a text file and as a stream.
@@ -72,7 +75,7 @@ def update_config(config_path, cluster, pdb_dir):
     except ImportError as exc:
         logging.error(exc, exc_info=True)
     # get the chains sizes and update the config file
-    parser_pdb = PDB.PDBParser()
+    parser_pdb = PDB.PDBParser(QUIET=True)
     structure = parser_pdb.get_structure(cluster_id, os.path.join(pdb_dir, "{}.pdb".format(cluster)))
     model = structure[0]
     for chain in model:
@@ -108,9 +111,9 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
     return cluster_min_energy
 
 
-def get_interface(cluster, input_dir, prefix, config):
+def get_interfaces(cluster, input_dir, prefix, config):
     """
-    Get the interface residues between chain A and chain B.
+    Get the interfaces residues between the chains in the docking PDF.
 
     :param cluster: the cluster ID from HADDOCK outputs.
     :type cluster: str
@@ -120,8 +123,8 @@ def get_interface(cluster, input_dir, prefix, config):
     :type prefix: str
     :param config: the configuration of the analysis.
     :type config: dict
-    :return:
-    :rtype:
+    :return: the interfaces.
+    :rtype: dict
     """
 
     cmd.do("load {}".format(os.path.join(input_dir, "{}.pdb".format(cluster))))
@@ -130,21 +133,82 @@ def get_interface(cluster, input_dir, prefix, config):
         # set chain color
         cmd.color(config[chain]["color"], chain)
         logging.debug("{} ({}): color is set to {}.".format(chain, config[chain]["name"], config[chain]["color"]))
-        # set regions if any
+        # set regions and colors if any
         if "regions" in config[chain]:
             for region_id, region_data in config[chain]["regions"].items():
                 cmd.select(region_id, "{} and resi {}-{}".format(chain, region_data["start"], region_data["end"]))
                 cmd.color(region_data["color"], region_id)
-                logging.debug("\tregion {}: from {} to {}, color is set to {}.".format(region_id,
-                                                                                       region_data["start"],
-                                                                                       region_data["end"],
-                                                                                       region_data["color"]))
-        # if "mutations" in config:
-        #     if "alterations" in config["mutations"]:
+                logging.info("\tregion {}: from {} to {}, color is set to {}.".format(region_id,
+                                                                                      region_data["start"],
+                                                                                      region_data["end"],
+                                                                                      region_data["color"]))
+        if "mutations" in config[chain]:
+            # update index with alterations from the reference sequence where the mutations index come from
+            if "alterations" in config[chain]["mutations"]:
+                shift_idx = 0
+                for alter_pos, alter_value in config[chain]["mutations"]["alterations"].items():
+                    alter_str = "{}{}".format("+" if alter_value > 0 else "-", alter_value)
+                    cmd.alter("{} and resi {}-{}".format(chain, alter_pos + shift_idx,
+                                                         config[chain]["length"] + shift_idx),
+                              "resi=str(int(resi){})".format(alter_str))
+                    logging.info("\talteration of {} from {} (original position {}).".format(alter_str,
+                                                                                             alter_pos + shift_idx,
+                                                                                             alter_pos))
+                    shift_idx = shift_idx + int(alter_str)
+            # set mutations to licorice representation
+            mutations_selection = "{}_mutations".format(config[chain]["name"])
+            mut_positions_str = config[chain]["mutations"]["positions"][0]
+            for idx in range(1, len(config[chain]["mutations"]["positions"])):
+                mut_positions_str = "{}+{}".format(mut_positions_str, config[chain]["mutations"]["positions"][idx])
+            cmd.select(mutations_selection, "{} and resi {}".format(chain, mut_positions_str))
+            cmd.show("licorice", mutations_selection)
+            pymol.util.cbaw(mutations_selection)
+            cmd.label("{} and name ca".format(mutations_selection), "'%s-%s' % (resn,resi)")
+            cmd.zoom(mutations_selection)
+    # record the image
+    path_img = "{}_mutations.png".format(prefix)
+    cmd.png(path_img, ray=1, quiet=1)
+    logging.info("{} image: {}".format(cluster, path_img))
 
+    # get the interface residues between each chain
+    chains_interfaces = {}
+    interfaces_ids = []
+    chains = list(config.keys())
+    for i in range(0, len(chains) - 1):
+        prot_i = config[chains[i]]["name"]
+        for j in range(i + 1, len(chains)):
+            prot_j = config[chains[j]]["name"]
+            interface_id = "interface_{}-{}".format(prot_i, prot_j)
+            interface_raw = interfaceResidues.interfaceResidues(cluster, chains[i], chains[j], 1.0, interface_id)
+            interface = {}
+            for item in interface_raw:
+                if item[0] in interface:
+                    interface[item[0]][item[1]] = item[2]
+                else:
+                    interface[item[0]] = {item[1]: item[2]}
+            interface[prot_i] = interface["chA"]
+            del interface["chA"]
+            interface[prot_j] = interface["chB"]
+            del interface["chB"]
+            chains_interfaces["{}_{}".format(prot_i, prot_j)] = interface
 
-    # path_img = os.path.join(out_dir, "{}.png".format(cluster))
-    # cmd.png(path_img, ray=1)
+            # copy the interface to a new object
+            cmd.create(interface_id, interface_id)
+            interfaces_ids.append(interface_id)
+            # disable the interface object for the pictures afterwards
+            cmd.disable(interface_id)
+
+    # save the interfaces images
+    cmd.disable(cluster)
+    for inter_id in interfaces_ids:
+        cmd.enable(inter_id)
+        path_img = "{}_{}.png".format(prefix, inter_id)
+        cmd.png(path_img, ray=1, quiet=1)
+        cmd.disable(inter_id)
+        logging.info("{} image: {}".format(inter_id, path_img))
+    print(chains_interfaces)
+
+    return chains_interfaces
 
 
 if __name__ == "__main__":
@@ -194,6 +258,6 @@ if __name__ == "__main__":
     configuration = update_config(args.config, cluster_id, args.input)
 
     # load the pdb file and get the interface residues
-    get_interface(cluster_id, args.input, args.prefix, configuration)
+    interfaces = get_interfaces(cluster_id, args.input, args.prefix, configuration)
 
-
+    #todo: heatmaps des interfaces
