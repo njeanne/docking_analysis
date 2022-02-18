@@ -1,0 +1,29 @@
+# Configuration file for PyMol session representations.
+# All colors are in hexadecimal format.
+
+chainA: # mandatory
+  name: <NAME TO DISPLAY FOR CHAIN A> # mandatory
+  color: <HEXADECIMAL COLOR> # mandatory
+  mutations: # optional
+    - <POSITION MUTATION 1>
+    - <POSITION MUTATION 2>
+    - ...
+  regions: # optional
+    Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+      start: <START POSITION>
+      end: <END POSITION>
+      color: <HEXADECIMAL COLOR>
+chainB: # mandatory
+  name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
+  color: <HEXADECIMAL COLOR> # mandatory
+  mutations: # optional
+    - <POSITION MUTATION 1>
+    - <POSITION MUTATION 2>
+    - ...
+    regions: # optional
+      Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+        start: <START POSITION>
+        end: <END POSITION>
+        color: <HEXADECIMAL COLOR>
+chainC: # optional
+  ...
