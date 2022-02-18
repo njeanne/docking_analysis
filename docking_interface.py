@@ -12,9 +12,11 @@ __version__ = "1.0.0"
 import argparse
 import logging
 import os
-from pymol import cmd
 import re
 import sys
+
+from Bio import PDB
+from pymol import cmd
 import yaml
 
 
@@ -50,6 +52,35 @@ def create_log(path, level):
     return logging
 
 
+def update_config(config_path, cluster, pdb_dir):
+    """
+    Load the configuration file and update it with the chains sizes.
+
+    :param config_path: the path to the configuration file.
+    :type config_path: str
+    :param cluster: the cluster ID.
+    :type cluster: str
+    :param pdb_dir: the path to the clusters PDB directory.
+    :type pdb_dir: str
+    :return: the updated configuration file.
+    :rtype: dict
+    """
+    # load the config file
+    try:
+        with open(config_path, "r") as config_file:
+            config = yaml.safe_load(config_file.read())
+    except ImportError as exc:
+        logging.error(exc, exc_info=True)
+    # get the chains sizes and update the config file
+    parser_pdb = PDB.PDBParser()
+    structure = parser_pdb.get_structure(cluster_id, os.path.join(pdb_dir, "{}.pdb".format(cluster)))
+    model = structure[0]
+    for chain in model:
+        config["chain {}".format(chain.id)]["length"] = len(list(chain.get_residues()))
+
+    return config
+
+
 def get_cluster_min_binding_energy(dir_pdb_cluster):
     """
     Get the ID of the cluster with the minimum of binding energy.
@@ -77,8 +108,7 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
     return cluster_min_energy
 
 
-def get_interface(cluster, input_dir, out_dir, chain_a, chain_b, mutations_a_path, mutations_b_path, regions_a_path,
-                  regions_b_path):
+def get_interface(cluster, input_dir, prefix, config):
     """
     Get the interface residues between chain A and chain B.
 
@@ -86,30 +116,35 @@ def get_interface(cluster, input_dir, out_dir, chain_a, chain_b, mutations_a_pat
     :type cluster: str
     :param input_dir: the path to the HADDOCK outputs directory.
     :type input_dir: str
-    :param out_dir: the path to the outputs directory.
-    :type out_dir: str
-    :param chain_a: the name of the chain A for the results.
-    :type chain_a: str
-    :param chain_b: the name of the chain B for the results.
-    :type chain_b: str
-    :param mutations_a_path: the path to the file containing the mutations to highlight in the chain A.
-    :type mutations_a_path: str
-    :param mutations_b_path: the path to the file containing the mutations to highlight in the chain B.
-    :type mutations_b_path: str
-    :param regions_a_path: the path to the CSV file containing the regions to highlight in the chain A.
-    :type regions_a_path: str
-    :param regions_b_path: the path to the CSV file containing the regions to highlight in the chain B.
-    :type regions_b_path: str
+    :param prefix: the prefix of the outputs files.
+    :type prefix: str
+    :param config: the configuration of the analysis.
+    :type config: dict
     :return:
     :rtype:
     """
+
     cmd.do("load {}".format(os.path.join(input_dir, "{}.pdb".format(cluster))))
     cmd.show("cartoon", cluster)
-    cmd.color("chocolate", "chain A")
-    cmd.color("marine", "chain B")
+    for chain in config:
+        # set chain color
+        cmd.color(config[chain]["color"], chain)
+        logging.debug("{} ({}): color is set to {}.".format(chain, config[chain]["name"], config[chain]["color"]))
+        # set regions if any
+        if "regions" in config[chain]:
+            for region_id, region_data in config[chain]["regions"].items():
+                cmd.select(region_id, "{} and resi {}-{}".format(chain, region_data["start"], region_data["end"]))
+                cmd.color(region_data["color"], region_id)
+                logging.debug("\tregion {}: from {} to {}, color is set to {}.".format(region_id,
+                                                                                       region_data["start"],
+                                                                                       region_data["end"],
+                                                                                       region_data["color"]))
+        # if "mutations" in config:
+        #     if "alterations" in config["mutations"]:
 
-    path_img = os.path.join(out_dir, "{}.png".format(cluster))
-    cmd.png(path_img, ray=1)
+
+    # path_img = os.path.join(out_dir, "{}.png".format(cluster))
+    # cmd.png(path_img, ray=1)
 
 
 if __name__ == "__main__":
@@ -125,24 +160,9 @@ if __name__ == "__main__":
     From a docking performed by HADDOCK, select the better cluster and extract the interface atoms.
     """.format(os.path.basename(__file__), __version__, __author__, __email__, __copyright__)
     parser = argparse.ArgumentParser(description=descr, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", required=True, type=str, help="the path to the output directory.")
-    parser.add_argument("--chain-A", required=True, type=str,
-                        help="the name of the protein as chain A in the docking pdb files.")
-    parser.add_argument("--chain-B", required=True, type=str,
-                        help="the name of the protein as chain B in the docking pdb files.")
-    parser.add_argument("--regions-A", required=False, type=str,
-                        help="the path to a CSV with the regions, start position, end position and color to highligth "
-                             "in chain A.")
-    parser.add_argument("--regions-B", required=False, type=str,
-                        help="the path to a CSV with the regions, start position, end position and color to highligth "
-                             "in chain B.")
-    parser.add_argument("--mutations-A", required=False, type=str,
-                        help="the path to a file with the mutations in chain A to highlight. The file contains the "
-                             "positions separated by commas.")
-    parser.add_argument("--mutations-B", required=False, type=str,
-                        help="the path to a file with the mutations in chain A to highlight. The file contains the "
-                             "positions separated by commas.")
-    parser.add_argument("--log", required=False, type=str,
+    parser.add_argument("-p", "--prefix", required=True, type=str, help="the prefix path for the output files.")
+    parser.add_argument("-c", "--config", required=True, type=str, help="the path to the YAML configuration file.")
+    parser.add_argument("-l", "--log", required=False, type=str,
                         help="the path for the log file. If this option is skipped, the log file is created in the "
                              "output directory.")
     parser.add_argument("--log-level", required=False, type=str,
@@ -154,13 +174,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # create output directory if necessary
-    os.makedirs(args.out, exist_ok=True)
+    out_dir = os.path.dirname(args.prefix)
+    os.makedirs(out_dir, exist_ok=True)
 
     # create the logger
     if args.log:
         log_path = args.log
     else:
-        log_path = os.path.join(args.out, "{}.log".format(os.path.splitext(os.path.basename(__file__))[0]))
+        log_path = os.path.join(out_dir, "{}.log".format(os.path.splitext(os.path.basename(__file__))[0]))
     create_log(log_path, args.log_level)
 
     logging.info("version: {}".format(__version__))
@@ -169,8 +190,10 @@ if __name__ == "__main__":
     # get the pdb cluster file with the minimal binding energy
     cluster_id = get_cluster_min_binding_energy(args.input)
 
+    # load the configuration file and update it
+    configuration = update_config(args.config, cluster_id, args.input)
+
     # load the pdb file and get the interface residues
-    get_interface(cluster_id, args.input, args.out, args.chain_A, args.chain_B, args.mutations_A, args.mutations_B,
-                  args.regions_A, args.regions_B)
+    get_interface(cluster_id, args.input, args.prefix, configuration)
 
 
