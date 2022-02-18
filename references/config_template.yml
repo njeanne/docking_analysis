@@ -1,29 +1,40 @@
 # Configuration file for PyMol session representations.
-# All colors are in hexadecimal format.
+# colors are defined with names, see: https://pymolwiki.org/index.php/Color_Values
 
 chainA: # mandatory
   name: <NAME TO DISPLAY FOR CHAIN A> # mandatory
-  color: <HEXADECIMAL COLOR> # mandatory
-  mutations: # optional
-    - <POSITION MUTATION 1>
-    - <POSITION MUTATION 2>
-    - ...
+  color: <LIST RGB> # mandatory
   regions: # optional
-    Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+    region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
       start: <START POSITION>
       end: <END POSITION>
-      color: <HEXADECIMAL COLOR>
+      color: <LIST RGB>
+  mutations: # optional
+    alterations: # optional
+      # reset positions in the chain depending if deletion or insertions events happens to match with the reference
+      # genome where the mutations are listed
+      7: -3 # insertion event of 3 residues in chainA compared to the reference listing the mutations, -3 will be applied from position 7 to the end of chainA
+      24: 4 # deletion event of 4 residues in chainA compared to the reference listing the mutations, +4 will be applied from position 24 to the end of chainA
+      417: 1 # deletion event of 1 residue in chainA compared to the reference listing the mutations, +1 will be applied from position 417 to the end of chainA
+    positions: # mutation positions index on the reference genome
+      - <POSITION MUTATION 1>
+      - <POSITION MUTATION 2>
+      - ...
 chainB: # mandatory
   name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
   color: <HEXADECIMAL COLOR> # mandatory
   mutations: # optional
-    - <POSITION MUTATION 1>
-    - <POSITION MUTATION 2>
-    - ...
+    alterations: # optional
+      <POS 1 ON CHAIN>: <CORRECTION>
+      <POS 2 ON CHAIN>: <CORRECTION>
+    positions:
+      - <POSITION MUTATION 1>
+      - <POSITION MUTATION 2>
+      - ...
     regions: # optional
       Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
         start: <START POSITION>
         end: <END POSITION>
-        color: <HEXADECIMAL COLOR>
+        color: <LIST RGB>
 chainC: # optional
   ...
