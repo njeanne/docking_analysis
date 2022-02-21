@@ -1,42 +1,49 @@
 # Configuration file for PyMol session representations.
 # colors are defined with names, see: https://pymolwiki.org/index.php/Color_Values
 
-chainA: # mandatory
-  name: <NAME TO DISPLAY FOR CHAIN A> # mandatory
-  color: <LIST RGB> # mandatory
-  regions: # optional
-    region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
-      start: <START POSITION>
-      end: <END POSITION>
-      color: <LIST RGB>
-  mutations: # optional
-    alterations: # optional
-      # reset positions in the chain depending if deletion or insertions events happens compared to the reference
-      # genome where the mutations are listed:
-      #   for deletions, a positive number of the count of deleted residues. i.e del24-27, 24: 4
-      #   for insertions, a negative number of the count of inserted residues. i.e 215insAPE: 215: -3
-      <EVENT1 POSITION>: <ALTERATION1 VALUE>
-      <EVENT2 POSITION>: <ALTERATION2 VALUE>
-      ...
-    positions: # mutation positions index on the reference genome
-      - <POSITION MUTATION 1>
-      - <POSITION MUTATION 2>
-      - ...
-chainB: # mandatory
-  name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
-  color: <HEXADECIMAL COLOR> # mandatory
-  mutations: # optional
-    alterations: # optional
-      <POS 1 ON CHAIN>: <CORRECTION>
-      <POS 2 ON CHAIN>: <CORRECTION>
-    positions:
-      - <POSITION MUTATION 1>
-      - <POSITION MUTATION 2>
-      - ...
+chains:
+  chainA: # mandatory
+    name: <NAME TO DISPLAY FOR CHAIN A> # mandatory
+    color: <LIST RGB> # mandatory
     regions: # optional
-      Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+      region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
         start: <START POSITION>
         end: <END POSITION>
         color: <LIST RGB>
-chainC: # optional
-  ...
+    mutations: # optional
+      alterations: # optional
+        # reset positions in the chain depending if deletion or insertions events happens compared to the reference
+        # genome where the mutations are listed:
+        #   for deletions, a positive number of the count of deleted residues. i.e del24-27, 24: 4
+        #   for insertions, a negative number of the count of inserted residues. i.e 215insAPE: 215: -3
+        <EVENT1 POSITION>: <ALTERATION1 VALUE>
+        <EVENT2 POSITION>: <ALTERATION2 VALUE>
+        ...
+      positions: # mutation positions index on the reference genome
+        - <POSITION MUTATION 1>
+        - <POSITION MUTATION 2>
+        - ...
+  chainB: # mandatory
+    name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
+    color: <HEXADECIMAL COLOR> # mandatory
+    mutations: # optional
+      alterations: # optional
+        <POS 1 ON CHAIN>: <CORRECTION>
+        <POS 2 ON CHAIN>: <CORRECTION>
+      positions:
+        - <POSITION MUTATION 1>
+        - <POSITION MUTATION 2>
+        - ...
+      regions: # optional
+        Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+          start: <START POSITION>
+          end: <END POSITION>
+          color: <LIST RGB>
+  chainC: # optional
+    ...
+
+# configuration of the polar_pairs function, see references/polarPairs.py
+contacts:
+  # contact distance of atoms between chains in Angstroms
+  cutoff: <FLOAT DISTANCE> # optional, default is 4.0
+  angle: <FLOAT DEGREE> # optional, default is 63.0
