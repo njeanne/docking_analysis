@@ -249,16 +249,53 @@ def get_interactions(cluster, prefix, config):
 
             interactions_between_chains[interaction]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
                                                                                 "contacts_{}-{}".format(prot_i, prot_j))
-            for x in interactions_between_chains[interaction]["contacts"]:
-                print("{}: {}".format(x, interactions_between_chains[interaction]["contacts"][x]))
+            for r1 in interactions_between_chains[interaction]["contacts"]:
+                print("{}: {}".format(r1, interactions_between_chains[interaction]["contacts"][r1]["description"]))
+                for r2 in interactions_between_chains[interaction]["contacts"][r1]["contacts with"]:
+                    print("\t{}: {}".format(r2, interactions_between_chains[interaction]["contacts"][r1]["contacts with"][r2]))
             cmd.disable(interface_id)
 
     return interactions_between_chains
 
 
+def get_residue_from_atom(atom_nb, atom, conf, distance=None):
+    """
+    Search data from the atom to retrieve the residue and position the atoms belongs to, the nature of the atoms and
+    the distance from the first atom of the contact if the distance is provided.
+
+    :param atom_nb: the serial number of the atom.
+    :type atom_nb: int
+    :param atom: the atom data.
+    :type atom: str
+    :param conf: the analysis configuration.
+    :type conf: dict
+    :param distance: the distance between the 2 atoms
+    :type distance: float
+    :return: the residue and the dictionary describing the residue with the chain, the atom nature and serial number
+    and the distance if the atom is the second one in the interaction.
+    :rtype: str, dict
+    """
+    chain_name = conf["chains"]["chain {}".format(atom.get_full_id()[2])]["name"]
+    residue_pos = atom.get_full_id()[3][1]
+    residue_id = "{}{}".format(seq1(atom.get_parent().get_resname()), residue_pos)
+    logging.debug("\tatom{} belonging to residue: {}".format(1 if distance is None else 2, residue_id))
+    if distance is None:
+        data = {"description": {"chain": chain_name, "atom": {"type": atom.get_id(),
+                                                              "serial number": atom_nb}},
+                "contacts with": {}}
+    else:
+        logging.debug("\tdistance from atom1: {:.2f} Angstroms".format(distance))
+        data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb},
+                "distance": distance}
+
+    return residue_id, data
+
+
 def get_contacts(model_id, config, chain1, chain2, contact_id):
     """
     Get the atoms in contact between 2 chains, retrieve the residues they belong to and the contact distance.
+    The output dictionary has the following architecture:
+
 
     :param model_id: the model on which contacts are searched
     :type model_id:
@@ -273,7 +310,7 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     :return: the contact data.
     :rtype: dict
     """
-    pairs_contacts = {}
+    contacts = {}
     # get the atoms pairs contacts between chains
     raw_pairs_contacts = polarPairs.polar_pairs("{} and {}".format(model_id, chain1),
                                                 "{} and {}".format(model_id, chain2),
@@ -284,51 +321,45 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     parser_pdb = PDB.PDBParser(QUIET=True)
     structure = parser_pdb.get_structure(model_id, config["pdb"])
     model = structure[0]
-    for atom1_nb in raw_pairs_contacts:
-        logging.debug("atom1 serial number: {}".format(atom1_nb))
+    # search the atoms in contact
+    for raw_pairs_contact in raw_pairs_contacts:
+        atom1_serial_number = raw_pairs_contact[0]
+        atom2_serial_number = raw_pairs_contact[1]
+        dist = raw_pairs_contact[2]
+        atom1 = None
+        atom2 = None
+        atoms_found = False
+        logging.debug("raw pairs contact: {}".format(raw_pairs_contact))
+        # get the data from the two contacts atoms
         for chain in model:
             for chain_atom in chain.get_atoms():
-                if atom1_nb == chain_atom.get_serial_number():
-                    chain_name = config["chains"]["chain {}".format(chain_atom.get_full_id()[2])]["name"]
-                    logging.debug("\tatom1 serial number found in {} (chain {}): {}".format(chain_name,
-                                                                                            chain_atom.get_full_id()[2],
-                                                                                            chain_atom.get_full_id()))
-                    residue1_pos = chain_atom.get_full_id()[3][1]
-                    residue1_id = "{}{}".format(seq1(chain_atom.get_parent().get_resname()), residue1_pos)
-                    logging.debug("\tatom type in residue1: {}".format(residue1_id))
-                    if residue1_id not in pairs_contacts:
-                        pairs_contacts[residue1_id] = {"chain": chain_name,
-                                                       "atom": {"type": chain_atom.get_id(), "serial number": atom1_nb}}
-                    for atom2_nb in raw_pairs_contacts[atom1_nb]:
-                        dist = raw_pairs_contacts[atom1_nb][atom2_nb]
-                        logging.debug("\tatom2 serial number: {}".format(atom1_nb))
-                        for chain2 in model:
-                            for chain2_atom in chain2.get_atoms():
-                                if atom2_nb == chain2_atom.get_serial_number():
-                                    chain2_name = config["chains"]["chain "
-                                                                   "{}".format(chain2_atom.get_full_id()[2])]["name"]
-                                    logging.debug("\tatom2 serial number found in {} (chain {}): "
-                                                  "{}".format(chain2_name,
-                                                              chain2_atom.get_full_id()[2],
-                                                              chain2_atom.get_full_id()))
-                                    residue2_pos = chain2_atom.get_full_id()[3][1]
-                                    residue2_id = "{}{}".format(seq1(chain2_atom.get_parent().get_resname()),
-                                                                residue2_pos)
-                                    logging.debug("\t\tatom type in residue2: {}".format(residue2_id))
-                                    if "contacts" in pairs_contacts[residue1_id]:
-                                        pairs_contacts[residue1_id]["contacts"][residue2_id] = {"chain": chain2_name,
-                                                                                                "atom": {
-                                                                                                    "type": chain2_atom.get_id(),
-                                                                                                    "serial number": atom2_nb},
-                                                                                                "distance": dist}
-                                    else:
-                                        pairs_contacts[residue1_id]["contacts"] = {
-                                            residue2_id: {
-                                                "chain": chain2_name,
-                                                "atom": {"type": chain2_atom.get_id(), "serial number": atom2_nb},
-                                                "distance": dist}}
+                if atom1_serial_number == chain_atom.get_serial_number():
+                    atom1 = chain_atom
+                    logging.debug("\tatom1 ({}) found in {} (chain {}) with full "
+                                  "ID:\t{}".format(atom1_serial_number,
+                                                   config["chains"]["chain {}".format(chain.id)]["name"],
+                                                   chain.id, atom1.get_full_id()))
+                if atom2_serial_number == chain_atom.get_serial_number():
+                    atom2 = chain_atom
+                    logging.debug("\tatom2 ({}) found in {} (chain {}) with full"
+                                  "ID:\t{}".format(atom2_serial_number,
+                                                   config["chains"]["chain {}".format(chain.id)]["name"],
+                                                   chain.id, atom2.get_full_id()))
+                if atom1 is not None and atom2 is not None:
+                    atoms_found = True
+                    break
+            if atoms_found:
+                break
 
-    return pairs_contacts
+        # set data for atom1
+        residue1, residue_info = get_residue_from_atom(atom1_serial_number, atom1, config)
+        if residue1 not in contacts:
+            contacts[residue1] = residue_info
+        # set data for atom2
+        residue2, residue2_info = get_residue_from_atom(atom2_serial_number, atom2, config, distance=dist)
+        contacts[residue1]["contacts with"][residue2] = residue2_info
+
+    return contacts
 
 
 if __name__ == "__main__":
