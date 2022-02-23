@@ -22,7 +22,8 @@ def polar_pairs(sel1, sel2,  name, cutoff=4.0, angle=63.0):
     :param angle: h-bond angle cutoff in degrees. If angle="default", take "h_bond_max_angle" setting. If angle=0, do
     not detect h-bonding.
     :type angle: float
-    :return: the list of
+    :return: the list of lists of contacts: [[atom1_chainA_serial-number, atom2_chainA_serial-number, distance], ...]
+    :rtype: list
 
     """
     cutoff = float(cutoff)
@@ -36,15 +37,11 @@ def polar_pairs(sel1, sel2,  name, cutoff=4.0, angle=63.0):
     x = sorted(set(x))
     logging.info("\tFound %d polar contacts" % (len(x)))
 
-    pairs_contacts = {}
+    pairs_contacts = []
     for pair in x:
         distance = cmd.distance(name, '(%s`%s)' % pair[0], '(%s`%s)' % pair[1])
-        # get the atoms numbers involved in the contact pairs and the distances between them: {atom_A: {atom_B: dist}}
-        if pair[0] in pairs_contacts:
-            pairs_contacts[pair[0][1]][pair[1][1]] = distance
-        else:
-            pairs_contacts[pair[0][1]] = {pair[1][1]: distance}
-    print(pairs_contacts)
+        # get the atoms numbers involved in the contact pairs and the distances between them: [atom_A, atom_B, dist]
+        pairs_contacts.append([pair[0][1], pair[1][1], distance])
     return pairs_contacts
 
 
