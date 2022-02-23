@@ -15,8 +15,12 @@ import os
 import re
 import sys
 
+import altair as alt
+from altair_saver import save
 from Bio import PDB
 from Bio.SeqUtils import seq1
+import numpy as np
+import pandas as pd
 from pymol import cmd
 import yaml
 
@@ -115,7 +119,7 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
     return cluster_min_energy
 
 
-def proteins_setup(cluster, input_dir, config, prefix):
+def proteins_setup(cluster, input_dir, config, out_dir, involved_prot):
     """
     Set colors to proteins and regions. Save an image.
 
@@ -125,8 +129,10 @@ def proteins_setup(cluster, input_dir, config, prefix):
     :type input_dir: str
     :param config: the configuration of the chains for the analysis.
     :type config: dict
-    :param prefix: the prefix of the outputs files.
-    :type prefix: str
+    :param out_dir: the output directory.
+    :type out_dir: str
+    :param involved_prot: the proteins names involved in the whole docking.
+    :type involved_prot: str
     :return: the image path.
     :rtype: str
     """
@@ -151,20 +157,24 @@ def proteins_setup(cluster, input_dir, config, prefix):
                                                                                    region_data["end"],
                                                                                    region_data["color"]))
     # record the image
-    path_img = "{}.png".format(prefix)
+    path_img = os.path.join(out_dir, "{}.png".format(involved_prot))
     cmd.png(path_img, ray=1, quiet=1)
 
     return path_img
 
 
-def highlight_mutations(config, prefix):
+def highlight_mutations(config, out_dir, involved_prot):
     """
     Update positions and highlight the mutations based on a reference sequence for each protein.
 
     :param config: the configuration of the chains for the analysis.
     :type config: dict
-    :param prefix: the prefix of the outputs files.
-    :type prefix: str
+    :param out_dir: the output directory.
+    :type out_dir: str
+    :param involved_prot: the proteins names involved in the whole docking.
+    :type involved_prot: str
+    :return: the path of the pdb where the positions were updated.
+    :rtype: str
     """
 
     # highlight the mutations
@@ -194,11 +204,11 @@ def highlight_mutations(config, prefix):
             cmd.label("{} and name ca".format(mutations_selection), "'%s-%s' % (resn,resi)")
             cmd.zoom(mutations_selection)
             # record the image
-            path_img = "{}_mutations-{}.png".format(prefix, config[chain]["name"])
+            path_img = os.path.join(out_dir, "{}_mutations.png".format(config[chain]["name"]))
             cmd.png(path_img, ray=1, quiet=1)
             logging.info("\t{} mutations image: {}".format(config[chain]["name"], path_img))
 
-    path_updated_pdb = "{}_updated.pdb".format(prefix)
+    path_updated_pdb = os.path.join(out_dir, "{}_updated.pdb".format(involved_prot))
     cmd.save(path_updated_pdb, state=0)
     return path_updated_pdb
 
@@ -216,22 +226,22 @@ def get_residue_from_atom(atom_nb, atom, conf, distance=None):
     :type conf: dict
     :param distance: the distance between the 2 atoms
     :type distance: float
-    :return: the residue and the dictionary describing the residue with the chain, the atom nature and serial number
-    and the distance if the atom is the second one in the interaction.
-    :rtype: str, dict
+    :return: the tuple of the residue position and the residue type, and the dictionary describing the residue with the
+    chain, the atom nature and serial number and the distance if the atom is the second one in the interaction.
+    :rtype: tuple, dict
     """
     chain_name = conf["chains"]["chain {}".format(atom.get_full_id()[2])]["name"]
-    residue_pos = atom.get_full_id()[3][1]
-    residue_id = "{}{}".format(seq1(atom.get_parent().get_resname()), residue_pos)
-    logging.debug("\tatom{} belonging to residue: {}".format(1 if distance is None else 2, residue_id))
+    residue_position = atom.get_full_id()[3][1]
+    residue_type = seq1(atom.get_parent().get_resname())
+    logging.debug("\tatom{} belonging to residue: {}".format(1 if distance is None else 2, residue_type))
+    data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}}
     if distance is None:
-        data = {"description": {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}},
-                "contacts with": {}}
+        data["contacts with"] = {}
     else:
         logging.debug("\tdistance from atom1: {:.2f} Angstroms".format(distance))
-        data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}, "distance": distance}
+        data["distance"] = distance
 
-    return residue_id, data
+    return (residue_position, residue_type),  data
 
 
 def get_contacts(model_id, config, chain1, chain2, contact_id):
@@ -295,17 +305,17 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
                 break
 
         # set data for atom1
-        residue1, residue_info = get_residue_from_atom(atom1_serial_number, atom1, config)
-        if residue1 not in contacts:
-            contacts[residue1] = residue_info
+        res1_tuple, res1_data = get_residue_from_atom(atom1_serial_number, atom1, config)
+        if res1_tuple not in contacts:
+            contacts[res1_tuple] = res1_data
         # set data for atom2
-        residue2, residue2_info = get_residue_from_atom(atom2_serial_number, atom2, config, distance=dist)
-        contacts[residue1]["contacts with"][residue2] = residue2_info
+        res2_tuple, res2_data = get_residue_from_atom(atom2_serial_number, atom2, config, distance=dist)
+        contacts[res1_tuple]["contacts with"][res2_tuple] = res2_data
 
     return contacts
 
 
-def get_interactions(cluster, prefix, config):
+def get_interactions(cluster, out_dir, config):
     """
     Get the interactions of two types between the proteins:
         - the residues at the interface for each chain by couple of proteins
@@ -313,8 +323,8 @@ def get_interactions(cluster, prefix, config):
 
     :param cluster: the cluster ID from HADDOCK outputs.
     :type cluster: str
-    :param prefix: the prefix of the outputs files.
-    :type prefix: str
+    :param out_dir: the output directory.
+    :type out_dir: str
     :param config: the whole configuration of the analysis.
     :type config: dict
     :return: the interactions.
@@ -328,9 +338,9 @@ def get_interactions(cluster, prefix, config):
         prot_i = config["chains"][chains[i]]["name"]
         for j in range(i + 1, len(chains)):
             prot_j = config["chains"][chains[j]]["name"]
-            protein_couple = "{}-{}".format(prot_i, prot_j)
-            logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), protein_couple))
-            interface_id = "interface_{}".format(protein_couple)
+            couple = "{}-{}".format(prot_i, prot_j)
+            logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), couple))
+            interface_id = "interface_{}".format(couple)
             interface_selection = "{}_sele".format(interface_id)
             interface_raw = interfaceResidues.interfaceResidues(cluster, chains[i], chains[j], 1.0, interface_selection)
             interface = {}
@@ -343,23 +353,70 @@ def get_interactions(cluster, prefix, config):
             del interface["chA"]
             interface[prot_j] = interface["chB"]
             del interface["chB"]
-            interactions[protein_couple] = {"interface": interface}
+            interactions[couple] = {"interface": interface}
 
             # copy the interface to a new object
             cmd.create(interface_id, interface_selection)
             cmd.zoom(interface_id)
             # disable cluster view to have only interface view
             cmd.disable(cluster)
-            path_img = "{}_{}.png".format(prefix, interface_id)
+            path_img = os.path.join(out_dir, "{}.png".format(interface_id))
             cmd.png(path_img, ray=1, quiet=1)
             logging.info("\t{} image: {}".format(interface_id.replace("_", " "), path_img))
             cmd.enable(cluster)
 
-            interactions[protein_couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
-                                                                    "contacts_{}-{}".format(prot_i, prot_j))
+            interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
+                                                            "contacts_{}".format(couple))
             cmd.disable(interface_id)
 
     return interactions
+
+
+def contacts_heatmap(data, couple, out_dir):
+    """
+    Create the contacts heatmap plot.
+
+    :param data: the contacts data.
+    :type data: dict
+    :param couple: the proteins involved.
+    :type couple: str
+    :param out_dir: the output directory.
+    :type out_dir: str
+    """
+
+    # create the input dataframe
+    contacts1 = list()
+    contacts2 = set()
+    for tuple1 in data:
+        contacts1.append(tuple1)
+        for tuple2 in data[tuple1]["contacts with"]:
+            contacts2.add(tuple2)
+    chain1 = data[tuple1]["chain"]
+    chain2 = data[tuple1]["contacts with"][tuple2]["chain"]
+    contacts1 = sorted(contacts1)
+    contacts2 = sorted(list(contacts2))
+
+    # create the meshgrid to prepare the dataframe
+    x, y = np.meshgrid(["{}{}".format(t[0], t[1]) for t in contacts1], ["{}{}".format(t[0], t[1]) for t in contacts2])
+    # create the contact distance list
+    z = list()
+    for tuple1 in contacts1:
+        for tuple2 in contacts2:
+            if tuple2 in data[tuple1]["contacts with"]:
+                z.append(data[tuple1]["contacts with"][tuple2]["distance"])
+            else:
+                z.append(0.0)
+    # Convert this grid to columnar data expected by Altair
+    source = pd.DataFrame({chain1.replace(".", "_"): x.ravel(), chain2.replace(".", "_"): y.ravel(), "distance": z})
+    # create the altair heatmap
+    heatmap = alt.Chart(data=source, title="{}: contact residues".format(couple)).mark_rect().encode(
+        x=alt.X(chain1.replace(".", "_"), title=chain1),
+        y=alt.Y(chain2.replace(".", "_"), title=chain2),
+        color="distance:Q"
+    )
+    out_path = os.path.join(out_dir, "{}_contacts.html".format(couple))
+    heatmap.save(out_path)
+    logging.info("[{}] {} contacts heatmap: {}".format(sys._getframe(  ).f_code.co_name.replace("_", " ").title(), couple, out_path))
 
 
 if __name__ == "__main__":
@@ -375,7 +432,7 @@ if __name__ == "__main__":
     From a docking performed by HADDOCK, select the better cluster and extract the interface atoms.
     """.format(os.path.basename(__file__), __version__, __author__, __email__, __copyright__)
     parser = argparse.ArgumentParser(description=descr, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("-p", "--prefix", required=True, type=str, help="the prefix path for the output files.")
+    parser.add_argument("-o", "--out", required=True, type=str, help="the path to the output directory.")
     parser.add_argument("-c", "--config", required=True, type=str, help="the path to the YAML configuration file.")
     parser.add_argument("-b", "--background-images", required=False, action="store_true",
                         help="set an opaque background for the images.")
@@ -391,14 +448,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # create output directory if necessary
-    out_dir = os.path.dirname(args.prefix)
-    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(args.out, exist_ok=True)
 
     # create the logger
     if args.log:
         log_path = args.log
     else:
-        log_path = os.path.join(out_dir, "{}.log".format(os.path.splitext(os.path.basename(__file__))[0]))
+        log_path = os.path.join(args.out, "{}.log".format(os.path.splitext(os.path.basename(__file__))[0]))
     create_log(log_path, args.log_level)
 
     logging.info("version: {}".format(__version__))
@@ -414,23 +470,25 @@ if __name__ == "__main__":
 
     # load the configuration file and update it
     configuration = update_config(args.config, cluster_id, args.input)
+    proteins_involved = []
+    for chain_id in configuration["chains"]:
+        proteins_involved.append(configuration["chains"][chain_id]["name"])
+    proteins_involved = "-".join(proteins_involved)
 
     # set up the proteins and regions
-    img_path = proteins_setup(cluster_id, args.input, configuration["chains"], args.prefix)
+    img_path = proteins_setup(cluster_id, args.input, configuration["chains"], args.out, proteins_involved)
     logging.info("{} image: {}".format(cluster_id, img_path))
 
     # highlight mutations
-    updated_pdb_path = highlight_mutations(configuration["chains"], args.prefix)
+    updated_pdb_path = highlight_mutations(configuration["chains"], args.out, proteins_involved)
     configuration["pdb"] = updated_pdb_path
 
     # load the pdb file from the updated configuration file, get the interfaces and the contacts between residues
-    interactions_between_chains = get_interactions(cluster_id, args.prefix, configuration)
-    for k in interactions_between_chains:
-        for r1 in interactions_between_chains[k]["contacts"]:
-            print("{}: {}".format(r1, interactions_between_chains[k]["contacts"][r1]["description"]))
-            for r2 in interactions_between_chains[k]["contacts"][r1]["contacts with"]:
-                print("\t{}: {}".format(r2, interactions_between_chains[k]["contacts"][r1]["contacts with"][r2]))
+    interactions_between_chains = get_interactions(cluster_id, args.out, configuration)
+
+    # create the contacts heatmap plot
+    for protein_couple in interactions_between_chains:
+        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"], protein_couple, args.out)
 
     # save the session
-    cmd.save("{}.pse".format(args.prefix), state=0)
-
+    cmd.save(os.path.join(args.out, "{}.pse".format(proteins_involved)), state=0)
