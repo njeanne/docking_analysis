@@ -109,11 +109,13 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
                             min_energy = float(match.group(1))
                             cluster_min_energy = file_split[0]
                         continue
-    logging.info("{} detected with the minimal binding energy: {}".format(cluster_min_energy, min_energy))
+    logging.info("[{}] {} detected with the minimal binding energy: "
+                 "{}".format(get_cluster_min_binding_energy.__name__.replace("_", " ").title(),
+                             cluster_min_energy, min_energy))
     return cluster_min_energy
 
 
-def set_up_proteins(cluster, input_dir, config, prefix):
+def proteins_setup(cluster, input_dir, config, prefix):
     """
     Set colors to proteins and regions. Save an image.
 
@@ -135,9 +137,10 @@ def set_up_proteins(cluster, input_dir, config, prefix):
     for chain in config:
         # set chain color
         cmd.color(config[chain]["color"], chain)
-        logging.info("[Proteins set-up] {} ({}): color set to {}.".format(chain,
-                                                                          config[chain]["name"],
-                                                                          config[chain]["color"]))
+        logging.info("[{}] {} ({}): color set to {}.".format(proteins_setup.__name__.replace("_", " ").title(),
+                                                             chain,
+                                                             config[chain]["name"],
+                                                             config[chain]["color"]))
         # set regions and colors if any
         if "regions" in config[chain]:
             for region_id, region_data in config[chain]["regions"].items():
@@ -167,7 +170,8 @@ def highlight_mutations(config, prefix):
     # highlight the mutations
     for chain in config:
         if "mutations" in config[chain]:
-            logging.info("[Highlight mutations] {} ({}):".format(chain, config[chain]["name"]))
+            logging.info("[{}] {} ({}):".format(highlight_mutations.__name__.replace("_", " ").title(),
+                                                chain, config[chain]["name"]))
             # update index with alterations from the reference sequence where the mutations index come from
             if "alterations" in config[chain]["mutations"]:
                 shift_idx = 0
@@ -199,65 +203,6 @@ def highlight_mutations(config, prefix):
     return path_updated_pdb
 
 
-def get_interactions(cluster, prefix, config):
-    """
-    Get the interfaces residues and the contacts between the chains in the docking PDB.
-
-    :param cluster: the cluster ID from HADDOCK outputs.
-    :type cluster: str
-    :param prefix: the prefix of the outputs files.
-    :type prefix: str
-    :param config: the whole configuration of the analysis.
-    :type config: dict
-    :return: the interfaces.
-    :rtype: dict
-    """
-
-    # get the interface residues between each chain
-    interactions_between_chains = {}
-    chains = list(config["chains"].keys())
-    for i in range(0, len(chains) - 1):
-        prot_i = config["chains"][chains[i]]["name"]
-        for j in range(i + 1, len(chains)):
-            prot_j = config["chains"][chains[j]]["name"]
-            interaction = "{}-{}".format(prot_i, prot_j)
-            logging.info("[{}] {}".format(get_interactions.__name__, interaction))
-            interface_id = "interface_{}".format(interaction)
-            interface_selection = "{}_sele".format(interface_id)
-            interface_raw = interfaceResidues.interfaceResidues(cluster, chains[i], chains[j], 1.0, interface_selection)
-            interface = {}
-            for item in interface_raw:
-                if item[0] in interface:
-                    interface[item[0]][item[1]] = item[2]
-                else:
-                    interface[item[0]] = {item[1]: item[2]}
-            interface[prot_i] = interface["chA"]
-            del interface["chA"]
-            interface[prot_j] = interface["chB"]
-            del interface["chB"]
-            interactions_between_chains[interaction] = {"interface": interface}
-
-            # copy the interface to a new object
-            cmd.create(interface_id, interface_selection)
-            cmd.zoom(interface_id)
-            # disable cluster view to have only interface view
-            cmd.disable(cluster)
-            path_img = "{}_{}.png".format(prefix, interface_id)
-            cmd.png(path_img, ray=1, quiet=1)
-            logging.info("\t{} image: {}".format(interface_id.replace("_", " "), path_img))
-            cmd.enable(cluster)
-
-            interactions_between_chains[interaction]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
-                                                                                "contacts_{}-{}".format(prot_i, prot_j))
-            for r1 in interactions_between_chains[interaction]["contacts"]:
-                print("{}: {}".format(r1, interactions_between_chains[interaction]["contacts"][r1]["description"]))
-                for r2 in interactions_between_chains[interaction]["contacts"][r1]["contacts with"]:
-                    print("\t{}: {}".format(r2, interactions_between_chains[interaction]["contacts"][r1]["contacts with"][r2]))
-            cmd.disable(interface_id)
-
-    return interactions_between_chains
-
-
 def get_residue_from_atom(atom_nb, atom, conf, distance=None):
     """
     Search data from the atom to retrieve the residue and position the atoms belongs to, the nature of the atoms and
@@ -280,13 +225,11 @@ def get_residue_from_atom(atom_nb, atom, conf, distance=None):
     residue_id = "{}{}".format(seq1(atom.get_parent().get_resname()), residue_pos)
     logging.debug("\tatom{} belonging to residue: {}".format(1 if distance is None else 2, residue_id))
     if distance is None:
-        data = {"description": {"chain": chain_name, "atom": {"type": atom.get_id(),
-                                                              "serial number": atom_nb}},
+        data = {"description": {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}},
                 "contacts with": {}}
     else:
         logging.debug("\tdistance from atom1: {:.2f} Angstroms".format(distance))
-        data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb},
-                "distance": distance}
+        data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}, "distance": distance}
 
     return residue_id, data
 
@@ -362,6 +305,63 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     return contacts
 
 
+def get_interactions(cluster, prefix, config):
+    """
+    Get the interactions of two types between the proteins:
+        - the residues at the interface for each chain by couple of proteins
+        - the contacts residues between the chains for each couple of proteins.
+
+    :param cluster: the cluster ID from HADDOCK outputs.
+    :type cluster: str
+    :param prefix: the prefix of the outputs files.
+    :type prefix: str
+    :param config: the whole configuration of the analysis.
+    :type config: dict
+    :return: the interactions.
+    :rtype: dict
+    """
+
+    # get the interface residues between each chain
+    interactions = {}
+    chains = list(config["chains"].keys())
+    for i in range(0, len(chains) - 1):
+        prot_i = config["chains"][chains[i]]["name"]
+        for j in range(i + 1, len(chains)):
+            prot_j = config["chains"][chains[j]]["name"]
+            protein_couple = "{}-{}".format(prot_i, prot_j)
+            logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), protein_couple))
+            interface_id = "interface_{}".format(protein_couple)
+            interface_selection = "{}_sele".format(interface_id)
+            interface_raw = interfaceResidues.interfaceResidues(cluster, chains[i], chains[j], 1.0, interface_selection)
+            interface = {}
+            for item in interface_raw:
+                if item[0] in interface:
+                    interface[item[0]][item[1]] = item[2]
+                else:
+                    interface[item[0]] = {item[1]: item[2]}
+            interface[prot_i] = interface["chA"]
+            del interface["chA"]
+            interface[prot_j] = interface["chB"]
+            del interface["chB"]
+            interactions[protein_couple] = {"interface": interface}
+
+            # copy the interface to a new object
+            cmd.create(interface_id, interface_selection)
+            cmd.zoom(interface_id)
+            # disable cluster view to have only interface view
+            cmd.disable(cluster)
+            path_img = "{}_{}.png".format(prefix, interface_id)
+            cmd.png(path_img, ray=1, quiet=1)
+            logging.info("\t{} image: {}".format(interface_id.replace("_", " "), path_img))
+            cmd.enable(cluster)
+
+            interactions[protein_couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
+                                                                    "contacts_{}-{}".format(prot_i, prot_j))
+            cmd.disable(interface_id)
+
+    return interactions
+
+
 if __name__ == "__main__":
     descr = """
     {} v. {}
@@ -416,17 +416,21 @@ if __name__ == "__main__":
     configuration = update_config(args.config, cluster_id, args.input)
 
     # set up the proteins and regions
-    img_path = set_up_proteins(cluster_id, args.input, configuration["chains"], args.prefix)
+    img_path = proteins_setup(cluster_id, args.input, configuration["chains"], args.prefix)
     logging.info("{} image: {}".format(cluster_id, img_path))
 
     # highlight mutations
     updated_pdb_path = highlight_mutations(configuration["chains"], args.prefix)
     configuration["pdb"] = updated_pdb_path
 
-    # load the pdb file and get the interface residues
-    interactions = get_interactions(cluster_id, args.prefix, configuration)
+    # load the pdb file from the updated configuration file, get the interfaces and the contacts between residues
+    interactions_between_chains = get_interactions(cluster_id, args.prefix, configuration)
+    for k in interactions_between_chains:
+        for r1 in interactions_between_chains[k]["contacts"]:
+            print("{}: {}".format(r1, interactions_between_chains[k]["contacts"][r1]["description"]))
+            for r2 in interactions_between_chains[k]["contacts"][r1]["contacts with"]:
+                print("\t{}: {}".format(r2, interactions_between_chains[k]["contacts"][r1]["contacts with"][r2]))
 
     # save the session
     cmd.save("{}.pse".format(args.prefix), state=0)
 
-    # print(interfaces)
