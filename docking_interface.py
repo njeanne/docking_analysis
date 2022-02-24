@@ -208,8 +208,9 @@ def highlight_mutations(config, out_dir, involved_prot):
             cmd.png(path_img, ray=1, quiet=1)
             logging.info("\t{} mutations image: {}".format(config[chain]["name"], path_img))
 
-    path_updated_pdb = os.path.join(out_dir, "{}_updated.pdb".format(involved_prot))
+    path_updated_pdb = os.path.join(os.path.abspath(out_dir), "{}_updated.pdb".format(involved_prot))
     cmd.save(path_updated_pdb, state=0)
+
     return path_updated_pdb
 
 
@@ -272,7 +273,7 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
                                                 name=contact_id)
     # get the PDB structure
     parser_pdb = PDB.PDBParser(QUIET=True)
-    structure = parser_pdb.get_structure(model_id, config["pdb"])
+    structure = parser_pdb.get_structure(model_id, config["updated pdb"])
     model = structure[0]
     # search the atoms in contact
     for raw_pairs_contact in raw_pairs_contacts:
@@ -367,12 +368,25 @@ def get_interactions(cluster, out_dir, config):
 
             interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
                                                             "contacts_{}".format(couple))
+            with open(os.path.join(out_dir, "{}_contacts.txt".format(couple)), "w") as out:
+                for tuple1, data1 in interactions[couple]["contacts"].items():
+                    out.write("{} {}{}: atom {} number {}".format(data1["chain"], tuple1[0], tuple1[1],
+                                                                  data1["atom"]["type"],
+                                                                  data1["atom"]["serial number"]))
+                    out.write("\n\tin contact with:")
+                    for tuple2, data2 in data1["contacts with"].items():
+                        out.write("\n\t\t{} {}{} at {} Angstrom, atom {} "
+                                  "number {}".format(data2["chain"], tuple2[0], tuple2[1],
+                                                     round(float(data2["distance"]), 2), data2["atom"]["type"],
+                                                     data2["atom"]["serial number"]))
+                    out.write("\n")
+
             cmd.disable(interface_id)
 
     return interactions
 
 
-def contacts_heatmap(data, couple, out_dir):
+def contacts_heatmap(data, couple, out_dir, config):
     """
     Create the contacts heatmap plot.
 
@@ -382,6 +396,8 @@ def contacts_heatmap(data, couple, out_dir):
     :type couple: str
     :param out_dir: the output directory.
     :type out_dir: str
+    :param config: the whole configuration of the analysis.
+    :type config: dict
     """
 
     # create the input dataframe
@@ -398,25 +414,30 @@ def contacts_heatmap(data, couple, out_dir):
 
     # create the meshgrid to prepare the dataframe
     x, y = np.meshgrid(["{}{}".format(t[0], t[1]) for t in contacts1], ["{}{}".format(t[0], t[1]) for t in contacts2])
-    # create the contact distance list
+    # create the contact distance list and get the min and max values
     z = list()
-    for tuple1 in contacts1:
-        for tuple2 in contacts2:
+    for tuple2 in contacts2:
+        for tuple1 in contacts1:
             if tuple2 in data[tuple1]["contacts with"]:
                 z.append(data[tuple1]["contacts with"][tuple2]["distance"])
             else:
-                z.append(0.0)
+                z.append(np.nan)
+
     # Convert this grid to columnar data expected by Altair
     source = pd.DataFrame({chain1.replace(".", "_"): x.ravel(), chain2.replace(".", "_"): y.ravel(), "distance": z})
+    out_path_df = os.path.join(out_dir, "{}_contacts.csv".format(couple))
+    source.to_csv(out_path_df, index=True)
     # create the altair heatmap
     heatmap = alt.Chart(data=source, title="{}: contact residues".format(couple)).mark_rect().encode(
         x=alt.X(chain1.replace(".", "_"), title=chain1),
-        y=alt.Y(chain2.replace(".", "_"), title=chain2),
-        color="distance:Q"
+        y=alt.Y(chain2.replace(".", "_"), title=chain2, sort=None),
+        color=alt.Color("distance:Q", title="Distance (Angstroms)", sort="descending",
+                        scale=alt.Scale(scheme="yelloworangered"))
     )
-    out_path = os.path.join(out_dir, "{}_contacts.html".format(couple))
-    heatmap.save(out_path)
-    logging.info("[{}] {} contacts heatmap: {}".format(sys._getframe(  ).f_code.co_name.replace("_", " ").title(), couple, out_path))
+    out_path_plot = os.path.join(out_dir, "{}_contacts.html".format(couple))
+    heatmap.save(out_path_plot)
+    logging.info("[{}] {} contacts heatmap: {}".format(sys._getframe(  ).f_code.co_name.replace("_", " ").title(),
+                                                       couple, out_path_plot))
 
 
 if __name__ == "__main__":
@@ -481,14 +502,17 @@ if __name__ == "__main__":
 
     # highlight mutations
     updated_pdb_path = highlight_mutations(configuration["chains"], args.out, proteins_involved)
-    configuration["pdb"] = updated_pdb_path
+    configuration["updated pdb"] = updated_pdb_path
 
     # load the pdb file from the updated configuration file, get the interfaces and the contacts between residues
     interactions_between_chains = get_interactions(cluster_id, args.out, configuration)
 
     # create the contacts heatmap plot
     for protein_couple in interactions_between_chains:
-        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"], protein_couple, args.out)
+        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"],
+                         protein_couple,
+                         args.out,
+                         configuration)
 
     # save the session
     cmd.save(os.path.join(args.out, "{}.pse".format(proteins_involved)), state=0)
