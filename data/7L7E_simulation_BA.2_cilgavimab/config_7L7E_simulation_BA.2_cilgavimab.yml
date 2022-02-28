@@ -1,0 +1,39 @@
+# Configuration file for PyMol session representations.
+# colors are defined with names, see: https://pymolwiki.org/index.php/Color_Values
+chains:
+  chain G:
+    name: BA.2
+    color: chocolate
+    mutations:
+      positions:
+        - 339
+        - 371
+        - 373
+        - 375
+        - 376
+        - 405
+        - 408
+        - 440
+        - 477
+        - 478
+        - 484
+        - 493
+        - 498
+        - 501
+        - 505
+  chain E:
+    name: Cilgavimab Heavy Chain
+    color: marine
+  chain F:
+    name: Cilgavimab Light Chain
+    color: purpleblue
+
+# configuration of the polar_pairs function, see references/polarPairs.py
+contacts:
+  # contact distance of atoms between chains in Angstroms
+  cutoff: 4.0
+  angle: 63.0
+  chains:
+    G:
+      - E
+      - F

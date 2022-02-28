@@ -1,0 +1,32 @@
+# Configuration file for PyMol session representations.
+# colors are defined with names, see: https://pymolwiki.org/index.php/Color_Values
+chain A:
+  name: BA.1
+  color: chocolate
+  mutations:
+    alterations:
+
+    positions:
+      - 339
+      - 371
+      - 373
+      - 375
+      - 376
+      - 405
+      - 408
+      - 440
+      - 477
+      - 478
+      - 484
+      - 493
+      - 498
+      - 501
+      - 505
+  regions:
+    RBD:
+      start: 313
+      end: 536
+      color: warmpink
+chain B:
+  name: Cilgavimab
+  color: marine

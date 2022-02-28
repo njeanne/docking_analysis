@@ -60,36 +60,6 @@ def create_log(path, level):
     return logging
 
 
-def update_config(config_path, cluster, pdb_dir):
-    """
-    Load the configuration file and update it with the path to pdb file and the chains sizes.
-
-    :param config_path: the path to the configuration file.
-    :type config_path: str
-    :param cluster: the cluster ID.
-    :type cluster: str
-    :param pdb_dir: the path to the clusters PDB directory.
-    :type pdb_dir: str
-    :return: the updated configuration file.
-    :rtype: dict
-    """
-    # load the config file
-    try:
-        with open(config_path, "r") as config_file:
-            config = yaml.safe_load(config_file.read())
-    except ImportError as exc:
-        logging.error(exc, exc_info=True)
-    # get the chains sizes and update the config file
-    path_pdb = os.path.join(pdb_dir, "{}.pdb".format(cluster))
-    parser_pdb = PDB.PDBParser(QUIET=True)
-    structure = parser_pdb.get_structure(cluster_id, path_pdb)
-    model = structure[0]
-    for chain in model:
-        config["chains"]["chain {}".format(chain.id)]["length"] = len(list(chain.get_residues()))
-
-    return config
-
-
 def get_cluster_min_binding_energy(dir_pdb_cluster):
     """
     Get the ID of the cluster with the minimum of binding energy.
@@ -119,15 +89,44 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
     return cluster_min_energy
 
 
-def proteins_setup(cluster, input_dir, config, out_dir, involved_prot):
+def update_config(config_path, cluster, pdb_dir):
+    """
+    Load the configuration file and update it with the path to pdb file and the chains sizes.
+
+    :param config_path: the path to the configuration file.
+    :type config_path: str
+    :param cluster: the cluster ID.
+    :type cluster: str
+    :param pdb_dir: the path to the clusters PDB directory.
+    :type pdb_dir: str
+    :param is_file:
+    :return: the updated configuration file.
+    :rtype: dict
+    """
+    # load the config file
+    try:
+        with open(config_path, "r") as config_file:
+            config = yaml.safe_load(config_file.read())
+    except ImportError as exc:
+        logging.error(exc, exc_info=True)
+    # get the chains sizes and update the config file
+    config["pdb"] = os.path.join(pdb_dir, "{}.pdb".format(cluster))
+    parser_pdb = PDB.PDBParser(QUIET=True)
+    structure = parser_pdb.get_structure(cluster_id, config["pdb"])
+    model = structure[0]
+    for chain in model:
+        config["chains"]["chain {}".format(chain.id)]["length"] = len(list(chain.get_residues()))
+
+    return config
+
+
+def proteins_setup(cluster, config, out_dir, involved_prot):
     """
     Set colors to proteins and regions. Save an image.
 
     :param cluster: the cluster ID from HADDOCK outputs.
     :type cluster: str
-    :param input_dir: the path to the HADDOCK outputs directory.
-    :type input_dir: str
-    :param config: the configuration of the chains for the analysis.
+    :param config: the configuration for the analysis.
     :type config: dict
     :param out_dir: the output directory.
     :type out_dir: str
@@ -137,19 +136,19 @@ def proteins_setup(cluster, input_dir, config, out_dir, involved_prot):
     :rtype: str
     """
 
-    cmd.do("load {}".format(os.path.join(input_dir, "{}.pdb".format(cluster))))
+    cmd.do("load {}".format(config["pdb"]))
     cmd.show("cartoon", cluster)
 
-    for chain in config:
+    for chain in config["chains"]:
         # set chain color
-        cmd.color(config[chain]["color"], chain)
+        cmd.color(config["chains"][chain]["color"], chain)
         logging.info("[{}] {} ({}): color set to {}.".format(proteins_setup.__name__.replace("_", " ").title(),
                                                              chain,
-                                                             config[chain]["name"],
-                                                             config[chain]["color"]))
+                                                             config["chains"][chain]["name"],
+                                                             config["chains"][chain]["color"]))
         # set regions and colors if any
-        if "regions" in config[chain]:
-            for region_id, region_data in config[chain]["regions"].items():
+        if "regions" in config["chains"][chain]:
+            for region_id, region_data in config["chains"][chain]["regions"].items():
                 cmd.select(region_id, "{} and resi {}-{}".format(chain, region_data["start"], region_data["end"]))
                 cmd.color(region_data["color"], region_id)
                 logging.info("\tregion {}: from {} to {}, color set to {}.".format(region_id,
@@ -167,7 +166,7 @@ def highlight_mutations(config, out_dir, involved_prot):
     """
     Update positions and highlight the mutations based on a reference sequence for each protein.
 
-    :param config: the configuration of the chains for the analysis.
+    :param config: the configuration for the analysis.
     :type config: dict
     :param out_dir: the output directory.
     :type out_dir: str
@@ -178,35 +177,35 @@ def highlight_mutations(config, out_dir, involved_prot):
     """
 
     # highlight the mutations
-    for chain in config:
-        if "mutations" in config[chain]:
+    for chain in config["chains"]:
+        if "mutations" in config["chains"][chain]:
             logging.info("[{}] {} ({}):".format(highlight_mutations.__name__.replace("_", " ").title(),
-                                                chain, config[chain]["name"]))
+                                                chain, config["chains"][chain]["name"]))
             # update index with alterations from the reference sequence where the mutations index come from
-            if "alterations" in config[chain]["mutations"]:
+            if "alterations" in config["chains"][chain]["mutations"]:
                 shift_idx = 0
-                for alter_pos, alter_value in config[chain]["mutations"]["alterations"].items():
+                for alter_pos, alter_value in config["chains"][chain]["mutations"]["alterations"].items():
                     alter_str = "{}{}".format("+" if alter_value > 0 else "-", alter_value)
                     cmd.alter("{} and resi {}-{}".format(chain, alter_pos + shift_idx,
-                                                         config[chain]["length"] + shift_idx),
+                                                         config["chains"][chain]["length"] + shift_idx),
                               "resi=str(int(resi){})".format(alter_str))
                     logging.info("\talteration of {} from position {} (original "
                                  "position {}).".format(alter_str, alter_pos + shift_idx, alter_pos))
                     shift_idx = shift_idx + int(alter_str)
             # set mutations to licorice representation
-            mutations_selection = "{}_mutations".format(config[chain]["name"])
-            mut_positions_str = config[chain]["mutations"]["positions"][0]
-            for idx in range(1, len(config[chain]["mutations"]["positions"])):
-                mut_positions_str = "{}+{}".format(mut_positions_str, config[chain]["mutations"]["positions"][idx])
+            mutations_selection = "{}_mutations".format(config["chains"][chain]["name"])
+            mut_positions_str = config["chains"][chain]["mutations"]["positions"][0]
+            for idx in range(1, len(config["chains"][chain]["mutations"]["positions"])):
+                mut_positions_str = "{}+{}".format(mut_positions_str, config["chains"][chain]["mutations"]["positions"][idx])
             cmd.select(mutations_selection, "{} and resi {}".format(chain, mut_positions_str))
             cmd.show("licorice", mutations_selection)
             pymol.util.cbaw(mutations_selection)
             cmd.label("{} and name ca".format(mutations_selection), "'%s-%s' % (resn,resi)")
             cmd.zoom(mutations_selection)
             # record the image
-            path_img = os.path.join(out_dir, "{}_mutations.png".format(config[chain]["name"]))
+            path_img = os.path.join(out_dir, "{}_mutations.png".format(config["chains"][chain]["name"].replace(" ", "-")))
             cmd.png(path_img, ray=1, quiet=1)
-            logging.info("\t{} mutations image: {}".format(config[chain]["name"], path_img))
+            logging.info("\t{} mutations image: {}".format(config["chains"][chain]["name"], path_img))
 
     path_updated_pdb = os.path.join(os.path.abspath(out_dir), "{}_updated.pdb".format(involved_prot))
     cmd.save(path_updated_pdb, state=0)
@@ -336,9 +335,9 @@ def get_interactions(cluster, out_dir, config):
     interactions = {}
     chains = list(config["chains"].keys())
     for i in range(0, len(chains) - 1):
-        prot_i = config["chains"][chains[i]]["name"]
+        prot_i = config["chains"][chains[i]]["name"].replace(" ", "-")
         for j in range(i + 1, len(chains)):
-            prot_j = config["chains"][chains[j]]["name"]
+            prot_j = config["chains"][chains[j]]["name"].replace(" ", "-")
             couple = "{}-{}".format(prot_i, prot_j)
             logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), couple))
             interface_id = "interface_{}".format(couple)
@@ -368,19 +367,6 @@ def get_interactions(cluster, out_dir, config):
 
             interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
                                                             "contacts_{}".format(couple))
-            with open(os.path.join(out_dir, "{}_contacts.txt".format(couple)), "w") as out:
-                for tuple1, data1 in interactions[couple]["contacts"].items():
-                    out.write("{} {}{}: atom {} number {}".format(data1["chain"], tuple1[0], tuple1[1],
-                                                                  data1["atom"]["type"],
-                                                                  data1["atom"]["serial number"]))
-                    out.write("\n\tin contact with:")
-                    for tuple2, data2 in data1["contacts with"].items():
-                        out.write("\n\t\t{} {}{} at {} Angstrom, atom {} "
-                                  "number {}".format(data2["chain"], tuple2[0], tuple2[1],
-                                                     round(float(data2["distance"]), 2), data2["atom"]["type"],
-                                                     data2["atom"]["serial number"]))
-                    out.write("\n")
-
             cmd.disable(interface_id)
 
     return interactions
@@ -465,7 +451,7 @@ if __name__ == "__main__":
                         help="set the log level. If the option is skipped, log level is INFO.")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("input", type=str,
-                        help="the path to the HADDOCK output directory directory.")
+                        help="the path to the HADDOCK pdb output directory or directly to the file to use.")
     args = parser.parse_args()
 
     # create output directory if necessary
@@ -486,22 +472,26 @@ if __name__ == "__main__":
         cmd.set("ray_opaque_background", 1)
         logging.info("background set to opaque for images.")
 
-    # get the pdb cluster file with the minimal binding energy
-    cluster_id = get_cluster_min_binding_energy(args.input)
+    # lok if the input is a file or a directory and update the config file
+    if os.path.isfile(args.input):
+        # no search for cluster, set the file name as cluster
+        cluster_id = os.path.splitext(os.path.basename(args.input))[0]
+        configuration = update_config(args.config, cluster_id, os.path.dirname(args.input))
+    else:
+        # get the pdb cluster file with the minimal binding energy
+        cluster_id = get_cluster_min_binding_energy(args.input)
+        configuration = update_config(args.config, cluster_id, args.input)
 
-    # load the configuration file and update it
-    configuration = update_config(args.config, cluster_id, args.input)
+    # set up the proteins and regions
     proteins_involved = []
     for chain_id in configuration["chains"]:
         proteins_involved.append(configuration["chains"][chain_id]["name"])
     proteins_involved = "-".join(proteins_involved)
-
-    # set up the proteins and regions
-    img_path = proteins_setup(cluster_id, args.input, configuration["chains"], args.out, proteins_involved)
+    img_path = proteins_setup(cluster_id, configuration, args.out, proteins_involved)
     logging.info("{} image: {}".format(cluster_id, img_path))
 
     # highlight mutations
-    updated_pdb_path = highlight_mutations(configuration["chains"], args.out, proteins_involved)
+    updated_pdb_path = highlight_mutations(configuration, args.out, proteins_involved)
     configuration["updated pdb"] = updated_pdb_path
 
     # load the pdb file from the updated configuration file, get the interfaces and the contacts between residues
