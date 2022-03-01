@@ -162,9 +162,30 @@ def proteins_setup(cluster, config, out_dir, involved_prot):
     return path_img
 
 
-def highlight_mutations(config, out_dir, involved_prot):
+def licorice_residues(positions, pdb_chain_id, sele):
     """
-    Update positions and highlight the mutations based on a reference sequence for each protein.
+    Set residues as licorice.
+
+    :param positions: the list of positions to highlight
+    :type positions: list
+    :param pdb_chain_id: the identification of the chain as in the PDB file.
+    :type pdb_chain_id: str
+    :param sele: the name of the selection.
+    :type sele: str
+    """
+
+    # prepare the residue selection
+    sele_str = positions[0]
+    for idx in range(1, len(positions)):
+        sele_str = "{}+{}".format(sele_str, positions[idx])
+    cmd.select(sele, "{} and resi {}".format(pdb_chain_id, sele_str))
+    cmd.show("licorice", sele)
+    cmd.label("{} and name ca".format(sele), "'%s-%s' % (resn,resi)")
+
+
+def highlight_positions_of_interest(config, out_dir, involved_prot):
+    """
+    Update positions and highlight the positions of interest based on a reference sequence for each protein.
 
     :param config: the configuration for the analysis.
     :type config: dict
@@ -176,15 +197,15 @@ def highlight_mutations(config, out_dir, involved_prot):
     :rtype: str
     """
 
-    # highlight the mutations
+    # highlight the POI
     for chain in config["chains"]:
-        if "mutations" in config["chains"][chain]:
-            logging.info("[{}] {} ({}):".format(highlight_mutations.__name__.replace("_", " ").title(),
+        if "POI" in config["chains"][chain]:
+            logging.info("[{}] {} ({}):".format(highlight_positions_of_interest.__name__.replace("_", " ").title(),
                                                 chain, config["chains"][chain]["name"]))
-            # update index with alterations from the reference sequence where the mutations index come from
-            if "alterations" in config["chains"][chain]["mutations"]:
+            # update index with alterations from the reference sequence where the positions of interest index come from
+            if "alterations" in config["chains"][chain]["POI"]:
                 shift_idx = 0
-                for alter_pos, alter_value in config["chains"][chain]["mutations"]["alterations"].items():
+                for alter_pos, alter_value in config["chains"][chain]["POI"]["alterations"].items():
                     alter_str = "{}{}".format("+" if alter_value > 0 else "-", alter_value)
                     cmd.alter("{} and resi {}-{}".format(chain, alter_pos + shift_idx,
                                                          config["chains"][chain]["length"] + shift_idx),
@@ -192,25 +213,16 @@ def highlight_mutations(config, out_dir, involved_prot):
                     logging.info("\talteration of {} from position {} (original "
                                  "position {}).".format(alter_str, alter_pos + shift_idx, alter_pos))
                     shift_idx = shift_idx + int(alter_str)
-            # set mutations to licorice representation
-            mutations_selection = "{}_mutations".format(config["chains"][chain]["name"])
-            mut_positions_str = config["chains"][chain]["mutations"]["positions"][0]
-            for idx in range(1, len(config["chains"][chain]["mutations"]["positions"])):
-                mut_positions_str = "{}+{}".format(mut_positions_str, config["chains"][chain]["mutations"]["positions"][idx])
-            cmd.select(mutations_selection, "{} and resi {}".format(chain, mut_positions_str))
-            cmd.show("licorice", mutations_selection)
-            pymol.util.cbaw(mutations_selection)
-            cmd.label("{} and name ca".format(mutations_selection), "'%s-%s' % (resn,resi)")
-            cmd.zoom(mutations_selection)
-            # record the image
-            path_img = os.path.join(out_dir, "{}_mutations.png".format(config["chains"][chain]["name"].replace(" ", "-")))
-            cmd.png(path_img, ray=1, quiet=1)
-            logging.info("\t{} mutations image: {}".format(config["chains"][chain]["name"], path_img))
 
-    path_updated_pdb = os.path.join(os.path.abspath(out_dir), "{}_updated.pdb".format(involved_prot))
-    cmd.save(path_updated_pdb, state=0)
+            # highlight the POIs
+            licorice_residues(config["chains"][chain]["POI"]["positions"], chain,
+                              "{}_POI".format(config["chains"][chain]["name"]))
+            logging.info("\t{} residues of interest highlighted.".format(config["chains"][chain]["name"]))
 
-    return path_updated_pdb
+    path_highlighted_poi_pdb = os.path.join(out_dir, "{}_updated.pdb".format(involved_prot))
+    cmd.save(path_highlighted_poi_pdb, state=0)
+
+    return path_highlighted_poi_pdb
 
 
 def get_residue_from_atom(atom_nb, atom, conf, distance=None):
@@ -315,7 +327,55 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     return contacts
 
 
-def get_interactions(cluster, out_dir, config):
+def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, prot2):
+    """
+    Get the interface and save it as an image.
+
+    :param chain1: the chain 1 ID.
+    :type chain1: str
+    :param chain2: the chain 2 ID.
+    :type chain2: str
+    :param id_cluster: the cluster ID.
+    :type id_cluster: str
+    :param id_couple: the protein couple name.
+    :type id_couple: str
+    :param out_dir: the output directory path.
+    :type out_dir: str
+    :param prot1: the protein 1 name.
+    :type prot1: str
+    :param prot2: the protein 2 name.
+    :type prot2: str
+    :return: the interface residues.
+    :rtype: dict
+    """
+    interface_id = "interface_{}".format(id_couple)
+    interface_selection = "{}_sele".format(interface_id)
+    interface_raw = interfaceResidues.interfaceResidues(cluster, chain1, chain2, 1.0, interface_selection)
+    interface = {}
+    for item in interface_raw:
+        if item[0] in interface:
+            interface[item[0]][item[1]] = item[2]
+        else:
+            interface[item[0]] = {item[1]: item[2]}
+    interface[prot1] = interface["chA"]
+    del interface["chA"]
+    interface[prot2] = interface["chB"]
+    del interface["chB"]
+    # copy the interface to a new object
+    cmd.create(interface_id, interface_selection)
+    cmd.zoom(interface_id)
+    # disable cluster view to have only interface view for the image
+    cmd.disable(id_cluster)
+    path_img = os.path.join(out_dir, "{}.png".format(interface_id))
+    cmd.png(path_img, ray=1, quiet=1)
+    cmd.disable(interface_id)
+    cmd.enable(id_cluster)
+    logging.info("\tinterface {} image: {}".format(id_couple, path_img))
+
+    return interface
+
+
+def get_interactions(cluster, out_dir, config, get_interfaces):
     """
     Get the interactions of two types between the proteins:
         - the residues at the interface for each chain by couple of proteins
@@ -327,52 +387,59 @@ def get_interactions(cluster, out_dir, config):
     :type out_dir: str
     :param config: the whole configuration of the analysis.
     :type config: dict
+    :param get_interfaces: if the interfaces residues should be computed.
+    :type get_interfaces: bool
     :return: the interactions.
     :rtype: dict
     """
 
     # get the interface residues between each chain
     interactions = {}
+    contacts_to_highlight = {}
     chains = list(config["chains"].keys())
     for i in range(0, len(chains) - 1):
+        if chains[i] not in contacts_to_highlight:
+            contacts_to_highlight[chains[i]] = set()
         prot_i = config["chains"][chains[i]]["name"].replace(" ", "-")
         for j in range(i + 1, len(chains)):
+            if chains[j] not in contacts_to_highlight:
+                contacts_to_highlight[chains[j]] = set()
             prot_j = config["chains"][chains[j]]["name"].replace(" ", "-")
             couple = "{}-{}".format(prot_i, prot_j)
+            interactions[couple] = {}
             logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), couple))
-            interface_id = "interface_{}".format(couple)
-            interface_selection = "{}_sele".format(interface_id)
-            interface_raw = interfaceResidues.interfaceResidues(cluster, chains[i], chains[j], 1.0, interface_selection)
-            interface = {}
-            for item in interface_raw:
-                if item[0] in interface:
-                    interface[item[0]][item[1]] = item[2]
-                else:
-                    interface[item[0]] = {item[1]: item[2]}
-            interface[prot_i] = interface["chA"]
-            del interface["chA"]
-            interface[prot_j] = interface["chB"]
-            del interface["chB"]
-            interactions[couple] = {"interface": interface}
+            # get the interface if required
+            if get_interfaces:
+                interactions[couple] = get_interface_view(chains[i], chains[j], cluster, couple, out_dir, prot_i,
+                                                          prot_j)
 
-            # copy the interface to a new object
-            cmd.create(interface_id, interface_selection)
-            cmd.zoom(interface_id)
-            # disable cluster view to have only interface view
-            cmd.disable(cluster)
-            path_img = os.path.join(out_dir, "{}.png".format(interface_id))
-            cmd.png(path_img, ray=1, quiet=1)
-            logging.info("\t{} image: {}".format(interface_id.replace("_", " "), path_img))
-            cmd.enable(cluster)
-
+            # get the contacts
             interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
                                                             "contacts_{}".format(couple))
-            cmd.disable(interface_id)
+
+            # record the contacts to highlight them
+            for tuple_i in interactions[couple]["contacts"]:
+                contacts_to_highlight[chains[i]].add(tuple_i[0])
+                for tuple_j in interactions[couple]["contacts"][tuple_i]["contacts with"]:
+                    contacts_to_highlight[chains[j]].add(tuple_j[0])
+
+    # licorice the contacts and colorize the contacts if intersection with POI
+    for chain in chains:
+        licorice_residues(sorted(list(contacts_to_highlight[chain])), chain,
+                          "{}_contacts".format(config["chains"][chain]["name"]))
+        intersection = list(contacts_to_highlight[chain] & set(config["chains"][chain]["POI"]["positions"]))
+        logging.info("\t{} has {} contacts residues in Positions of Interest.".format(config["chains"][chain]["name"],
+                                                                                      len(intersection)))
+        if intersection:
+            sele_color = "{} and resi {}".format(chain, intersection[0])
+            for idx in range(1, len(intersection)):
+                sele_color = "{},{}".format(sele_color, intersection[idx])
+            cmd.color(config["chains"][chain]["POI"]["contact color"], sele_color)
 
     return interactions
 
 
-def contacts_heatmap(data, couple, out_dir, config):
+def contacts_heatmap(data, couple, out_dir):
     """
     Create the contacts heatmap plot.
 
@@ -382,8 +449,6 @@ def contacts_heatmap(data, couple, out_dir, config):
     :type couple: str
     :param out_dir: the output directory.
     :type out_dir: str
-    :param config: the whole configuration of the analysis.
-    :type config: dict
     """
 
     # create the input dataframe
@@ -441,6 +506,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=descr, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--out", required=True, type=str, help="the path to the output directory.")
     parser.add_argument("-c", "--config", required=True, type=str, help="the path to the YAML configuration file.")
+    parser.add_argument("-i", "--interfaces", required=False, action="store_true",
+                        help="get the interfaces between the proteins.")
     parser.add_argument("-b", "--background-images", required=False, action="store_true",
                         help="set an opaque background for the images.")
     parser.add_argument("-l", "--log", required=False, type=str,
@@ -491,18 +558,15 @@ if __name__ == "__main__":
     logging.info("{} image: {}".format(cluster_id, img_path))
 
     # highlight mutations
-    updated_pdb_path = highlight_mutations(configuration, args.out, proteins_involved)
+    updated_pdb_path = highlight_positions_of_interest(configuration, args.out, proteins_involved)
     configuration["updated pdb"] = updated_pdb_path
 
     # load the pdb file from the updated configuration file, get the interfaces and the contacts between residues
-    interactions_between_chains = get_interactions(cluster_id, args.out, configuration)
+    interactions_between_chains = get_interactions(cluster_id, args.out, configuration, args.interfaces)
 
     # create the contacts heatmap plot
     for protein_couple in interactions_between_chains:
-        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"],
-                         protein_couple,
-                         args.out,
-                         configuration)
+        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"], protein_couple, args.out)
 
     # save the session
     cmd.save(os.path.join(args.out, "{}.pse".format(proteins_involved)), state=0)

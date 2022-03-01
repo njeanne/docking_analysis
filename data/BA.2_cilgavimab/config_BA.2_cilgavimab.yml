@@ -9,7 +9,7 @@ chains:
         start: 313
         end: 536
         color: warmpink
-    mutations:
+    POI:
       alterations:
         24: 4
         417: 1
@@ -29,9 +29,28 @@ chains:
         - 498
         - 501
         - 505
+      contact color: red
   chain B:
     name: Cilgavimab
     color: marine
+    POI:
+      positions:
+        - 56
+        - 104
+        - 105
+        - 106
+        - 107
+        - 109
+        - 113
+        - 118
+        - 493
+        - 494
+        - 495
+        - 497
+        - 499
+        - 516
+        - 517
+      contact color: cyan
 
 # configuration of the polar_pairs function, see references/polarPairs.py
 contacts:
