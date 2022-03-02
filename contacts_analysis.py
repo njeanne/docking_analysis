@@ -23,7 +23,7 @@ from Bio import PDB
 from Bio.SeqUtils import seq1
 from pymol import cmd
 
-sys.path.insert(0, "references")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "references"))
 import interfaceResidues
 import polarPairs
 
