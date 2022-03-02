@@ -6,7 +6,7 @@ chains:
     color: chocolate
     regions:
       RBD:
-        start: 313
+        start: 315
         end: 536
         color: warmpink
     POI:
