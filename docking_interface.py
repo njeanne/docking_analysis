@@ -16,16 +16,16 @@ import re
 import sys
 
 import altair as alt
-from altair_saver import save
-from Bio import PDB
-from Bio.SeqUtils import seq1
 import numpy as np
 import pandas as pd
-from pymol import cmd
 import yaml
+from Bio import PDB
+from Bio.SeqUtils import seq1
+from pymol import cmd
 
 sys.path.insert(0, "references")
-import interfaceResidues, polarPairs
+import interfaceResidues
+import polarPairs
 
 
 def create_log(path, level):
@@ -181,6 +181,7 @@ def licorice_residues(positions, pdb_chain_id, sele):
     cmd.select(sele, "{} and resi {}".format(pdb_chain_id, sele_str))
     cmd.show("licorice", sele)
     cmd.label("{} and name ca".format(sele), "'%s-%s' % (resn,resi)")
+    cmd.disable(sele)
 
 
 def highlight_positions_of_interest(config, out_dir, involved_prot):
@@ -206,23 +207,70 @@ def highlight_positions_of_interest(config, out_dir, involved_prot):
             if "alterations" in config["chains"][chain]["POI"]:
                 shift_idx = 0
                 for alter_pos, alter_value in config["chains"][chain]["POI"]["alterations"].items():
-                    alter_str = "{}{}".format("+" if alter_value > 0 else "-", alter_value)
                     cmd.alter("{} and resi {}-{}".format(chain, alter_pos + shift_idx,
                                                          config["chains"][chain]["length"] + shift_idx),
-                              "resi=str(int(resi){})".format(alter_str))
+                              "resi=str(int(resi){}{})".format("+" if alter_value > 0 else "", alter_value))
                     logging.info("\talteration of {} from position {} (original "
-                                 "position {}).".format(alter_str, alter_pos + shift_idx, alter_pos))
-                    shift_idx = shift_idx + int(alter_str)
+                                 "position {}).".format(alter_value, alter_pos + shift_idx, alter_pos))
+                    shift_idx = shift_idx + alter_value
 
             # highlight the POIs
             licorice_residues(config["chains"][chain]["POI"]["positions"], chain,
-                              "{}_POI".format(config["chains"][chain]["name"]))
+                              "{}_POI".format(config["chains"][chain]["name"].replace(" ", "_")))
             logging.info("\t{} residues of interest highlighted.".format(config["chains"][chain]["name"]))
 
     path_highlighted_poi_pdb = os.path.join(out_dir, "{}_updated.pdb".format(involved_prot))
     cmd.save(path_highlighted_poi_pdb, state=0)
 
     return path_highlighted_poi_pdb
+
+
+def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, prot2):
+    """
+    Get the interface and save it as an image.
+
+    :param chain1: the chain 1 ID.
+    :type chain1: str
+    :param chain2: the chain 2 ID.
+    :type chain2: str
+    :param id_cluster: the cluster ID.
+    :type id_cluster: str
+    :param id_couple: the protein couple name.
+    :type id_couple: str
+    :param out_dir: the output directory path.
+    :type out_dir: str
+    :param prot1: the protein 1 name.
+    :type prot1: str
+    :param prot2: the protein 2 name.
+    :type prot2: str
+    :return: the interface residues.
+    :rtype: dict
+    """
+    interface_id = "interface_{}".format(id_couple)
+    interface_selection = "{}_sele".format(interface_id)
+    interface_raw = interfaceResidues.interfaceResidues(cluster, chain1, chain2, 1.0, interface_selection)
+    interface = {}
+    for item in interface_raw:
+        if item[0] in interface:
+            interface[item[0]][item[1]] = item[2]
+        else:
+            interface[item[0]] = {item[1]: item[2]}
+    interface[prot1] = interface["chA"]
+    del interface["chA"]
+    interface[prot2] = interface["chB"]
+    del interface["chB"]
+    # copy the interface to a new object
+    cmd.create(interface_id, interface_selection)
+    cmd.zoom(interface_id)
+    # disable cluster view to have only interface view for the image
+    cmd.disable(id_cluster)
+    path_img = os.path.join(out_dir, "{}.png".format(interface_id))
+    cmd.png(path_img, ray=1, quiet=1)
+    cmd.disable(interface_id)
+    cmd.enable(id_cluster)
+    logging.info("\tinterface {} image: {}".format(id_couple, path_img))
+
+    return interface
 
 
 def get_residue_from_atom(atom_nb, atom, conf, distance=None):
@@ -327,54 +375,6 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     return contacts
 
 
-def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, prot2):
-    """
-    Get the interface and save it as an image.
-
-    :param chain1: the chain 1 ID.
-    :type chain1: str
-    :param chain2: the chain 2 ID.
-    :type chain2: str
-    :param id_cluster: the cluster ID.
-    :type id_cluster: str
-    :param id_couple: the protein couple name.
-    :type id_couple: str
-    :param out_dir: the output directory path.
-    :type out_dir: str
-    :param prot1: the protein 1 name.
-    :type prot1: str
-    :param prot2: the protein 2 name.
-    :type prot2: str
-    :return: the interface residues.
-    :rtype: dict
-    """
-    interface_id = "interface_{}".format(id_couple)
-    interface_selection = "{}_sele".format(interface_id)
-    interface_raw = interfaceResidues.interfaceResidues(cluster, chain1, chain2, 1.0, interface_selection)
-    interface = {}
-    for item in interface_raw:
-        if item[0] in interface:
-            interface[item[0]][item[1]] = item[2]
-        else:
-            interface[item[0]] = {item[1]: item[2]}
-    interface[prot1] = interface["chA"]
-    del interface["chA"]
-    interface[prot2] = interface["chB"]
-    del interface["chB"]
-    # copy the interface to a new object
-    cmd.create(interface_id, interface_selection)
-    cmd.zoom(interface_id)
-    # disable cluster view to have only interface view for the image
-    cmd.disable(id_cluster)
-    path_img = os.path.join(out_dir, "{}.png".format(interface_id))
-    cmd.png(path_img, ray=1, quiet=1)
-    cmd.disable(interface_id)
-    cmd.enable(id_cluster)
-    logging.info("\tinterface {} image: {}".format(id_couple, path_img))
-
-    return interface
-
-
 def get_interactions(cluster, out_dir, config, get_interfaces):
     """
     Get the interactions of two types between the proteins:
@@ -426,7 +426,7 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
     # licorice the contacts and colorize the contacts if intersection with POI
     for chain in chains:
         licorice_residues(sorted(list(contacts_to_highlight[chain])), chain,
-                          "{}_contacts".format(config["chains"][chain]["name"]))
+                          "{}_contacts".format(config["chains"][chain]["name"].replace(" ", "_")))
         intersection = list(contacts_to_highlight[chain] & set(config["chains"][chain]["POI"]["positions"]))
         logging.info("\t{} has {} contacts residues in Positions of Interest.".format(config["chains"][chain]["name"],
                                                                                       len(intersection)))
@@ -454,6 +454,9 @@ def contacts_heatmap(data, couple, out_dir):
     # create the input dataframe
     contacts1 = list()
     contacts2 = set()
+    # set up variables to get the last tuples to get access after the for loop to the chains IDs
+    tuple1 = None
+    tuple2 = None
     for tuple1 in data:
         contacts1.append(tuple1)
         for tuple2 in data[tuple1]["contacts with"]:

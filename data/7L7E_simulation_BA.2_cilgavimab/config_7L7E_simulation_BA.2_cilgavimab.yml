@@ -13,6 +13,7 @@ chains:
         - 376
         - 405
         - 408
+        - 417
         - 440
         - 477
         - 478
@@ -21,19 +22,39 @@ chains:
         - 498
         - 501
         - 505
+      contact color: red
   chain E:
     name: Cilgavimab Heavy Chain
     color: marine
+    POI:
+      positions:
+        - 56
+        - 104
+        - 105
+        - 106
+        - 107
+        - 109
+        - 111
+        - 113
+        - 118
+      contact color: cyan
   chain F:
     name: Cilgavimab Light Chain
     color: purpleblue
+    POI:
+      positions:
+        - 32
+        - 33
+        - 34
+        - 36
+        - 38
+        - 55
+        - 56
+      contact color: purple
 
-# configuration of the polar_pairs function, see references/polarPairs.py
+        # configuration of the polar_pairs function, see references/polarPairs.py
 contacts:
   # contact distance of atoms between chains in Angstroms
   cutoff: 4.0
   angle: 63.0
-  chains:
-    G:
-      - E
-      - F
+

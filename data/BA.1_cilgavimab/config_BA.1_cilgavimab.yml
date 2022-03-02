@@ -1,32 +1,62 @@
 # Configuration file for PyMol session representations.
 # colors are defined with names, see: https://pymolwiki.org/index.php/Color_Values
-chain A:
-  name: BA.1
-  color: chocolate
-  mutations:
-    alterations:
+chains:
+  chain A:
+    name: BA.1
+    color: chocolate
+    regions:
+      RBD:
+        start: 312
+        end: 536
+        color: warmpink
+    POI:
+      alterations:
+        66: 3
+        142: 4
+        211: 2
+        215: -3
+      positions:
+        - 339
+        - 371
+        - 373
+        - 375
+        - 417
+        - 440
+        - 446
+        - 477
+        - 478
+        - 484
+        - 493
+        - 496
+        - 498
+        - 501
+        - 505
+      contact color: red
+  chain B:
+      name: Cilgavimab
+      color: marine
+      POI:
+        positions:
+          - 56
+          - 104
+          - 105
+          - 106
+          - 107
+          - 109
+          - 111
+          - 113
+          - 118
+          - 493
+          - 494
+          - 495
+          - 497
+          - 499
+          - 516
+          - 517
+        contact color: cyan
 
-    positions:
-      - 339
-      - 371
-      - 373
-      - 375
-      - 376
-      - 405
-      - 408
-      - 440
-      - 477
-      - 478
-      - 484
-      - 493
-      - 498
-      - 501
-      - 505
-  regions:
-    RBD:
-      start: 313
-      end: 536
-      color: warmpink
-chain B:
-  name: Cilgavimab
-  color: marine
+# configuration of the polar_pairs function, see references/polarPairs.py
+contacts:
+  # contact distance of atoms between chains in Angstroms
+  cutoff: 4.0
+  angle: 63.0
