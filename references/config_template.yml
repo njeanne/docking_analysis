@@ -4,13 +4,13 @@
 chains:
   chainA: # mandatory
     name: <NAME TO DISPLAY FOR CHAIN A> # mandatory
-    color: <LIST RGB> # mandatory
+    color: <COLOR NAME> # mandatory
     regions: # optional
       region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
         start: <START POSITION>
         end: <END POSITION>
-        color: <LIST RGB>
-    mutations: # optional
+        color: <COLOR NAME> # mandatory
+    POI: # optional Position Of Interest
       alterations: # optional
         # reset positions in the chain depending if deletion or insertions events happens compared to the reference
         # genome where the mutations are listed:
@@ -25,20 +25,21 @@ chains:
         - ...
   chainB: # mandatory
     name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
-    color: <HEXADECIMAL COLOR> # mandatory
-    mutations: # optional
+    color: <COLOR NAME> # mandatory
+    POI: # optional
       alterations: # optional
-        <POS 1 ON CHAIN>: <CORRECTION>
-        <POS 2 ON CHAIN>: <CORRECTION>
+        <EVENT1 POSITION>: <ALTERATION1 VALUE>
+        <EVENT2 POSITION>: <ALTERATION2 VALUE>
+        ...
       positions:
         - <POSITION MUTATION 1>
         - <POSITION MUTATION 2>
         - ...
       regions: # optional
-        Toto: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+        region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
           start: <START POSITION>
           end: <END POSITION>
-          color: <LIST RGB>
+          color: <COLOR NAME>
   chainC: # optional
     ...
 
