@@ -23,23 +23,25 @@ chains:
         - <POSITION MUTATION 1>
         - <POSITION MUTATION 2>
         - ...
+      contact color: <COLOR NAME> # mandatory
   chainB: # mandatory
     name: <NAME TO DISPLAY FOR CHAIN B> # mandatory
     color: <COLOR NAME> # mandatory
+    regions: # optional
+      region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
+        start: <START POSITION>
+        end: <END POSITION>
+        color: <COLOR NAME>
     POI: # optional
       alterations: # optional
         <EVENT1 POSITION>: <ALTERATION1 VALUE>
         <EVENT2 POSITION>: <ALTERATION2 VALUE>
         ...
-      positions:
+      positions: # mandatory
         - <POSITION MUTATION 1>
         - <POSITION MUTATION 2>
         - ...
-      regions: # optional
-        region_1: # optional, if set the name of the region is the key for the region and the following fields are mandatory
-          start: <START POSITION>
-          end: <END POSITION>
-          color: <COLOR NAME>
+      contact color: <COLOR NAME> # mandatory
   chainC: # optional
     ...
 
