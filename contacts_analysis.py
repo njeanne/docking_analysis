@@ -433,7 +433,7 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
                          "Interest.".format(config["chains"][chain]["name"], len(intersection)))
         else:
             intersection = None
-            logging.info("\t{} has no Positions of Interest int he configuration "
+            logging.info("\t{} has no Positions of Interest set in the configuration "
                          "file.".format(config["chains"][chain]["name"]))
         if intersection is not None:
             sele_color = "{} and resi {}".format(chain, intersection[0])
