@@ -427,10 +427,15 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
     for chain in chains:
         licorice_residues(sorted(list(contacts_to_highlight[chain])), chain,
                           "{}_contacts".format(config["chains"][chain]["name"].replace(" ", "_")))
-        intersection = list(contacts_to_highlight[chain] & set(config["chains"][chain]["POI"]["positions"]))
-        logging.info("\t{} has {} contacts residues in Positions of Interest.".format(config["chains"][chain]["name"],
-                                                                                      len(intersection)))
-        if intersection:
+        if "POI" in config["chains"][chain] and "positions" in config["chains"][chain]["POI"]:
+            intersection = list(contacts_to_highlight[chain] & set(config["chains"][chain]["POI"]["positions"]))
+            logging.info("\t{} has {} contacts residues in Positions of "
+                         "Interest.".format(config["chains"][chain]["name"], len(intersection)))
+        else:
+            intersection = None
+            logging.info("\t{} has no Positions of Interest int he configuration "
+                         "file.".format(config["chains"][chain]["name"]))
+        if intersection is not None:
             sele_color = "{} and resi {}".format(chain, intersection[0])
             for idx in range(1, len(intersection)):
                 sele_color = "{},{}".format(sele_color, intersection[idx])
