@@ -572,4 +572,4 @@ if __name__ == "__main__":
         contacts_heatmap(interactions_between_chains[protein_couple]["contacts"], protein_couple, args.out)
 
     # save the session
-    cmd.save(os.path.join(args.out, "{}.pse".format(proteins_involved)), state=0)
+    cmd.save(os.path.join(args.out, "{}_contacts.pse".format(proteins_involved)), state=0)
