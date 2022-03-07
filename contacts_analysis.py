@@ -304,6 +304,35 @@ def get_residue_from_atom(atom_nb, atom, conf, distance=None):
     return (residue_position, residue_type),  data
 
 
+def get_atom_serial_number(model, searched_chain, searched_atom_serial_nb, conf, atom_nb_id):
+    """
+
+    :param model:
+    :type model:
+    :param searched_chain:
+    :type searched_chain:
+    :param searched_atom_serial_nb:
+    :type searched_atom_serial_nb:
+    :param conf:
+    :type conf:
+    :param atom_nb_id:
+    :type atom_nb_id:
+    :return:
+    :rtype:
+    """
+    atom = None
+    for chain in model:
+        if f"chain {chain.id}" == searched_chain:
+            for chain_atom in chain.get_atoms():
+                if searched_atom_serial_nb == chain_atom.get_serial_number():
+                    atom = chain_atom
+                    found_chain_name = conf["chains"][f"chain {chain.id}"]["name"]
+                    logging.debug(f"\t{atom_nb_id} ({searched_atom_serial_nb}) found in {found_chain_name} "
+                                  f"(chain {chain.id}) with full ID:\t{atom.get_full_id()}")
+                    return atom
+    return atom
+
+
 def get_contacts(model_id, config, chain1, chain2, contact_id):
     """
     Get the atoms in contact between 2 chains, retrieve the residues they belong to and the contact distance.
@@ -325,44 +354,25 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     """
     contacts = {}
     # get the atoms pairs contacts between chains
-    raw_pairs_contacts = polarPairs.polar_pairs("{} and {}".format(model_id, chain1),
-                                                "{} and {}".format(model_id, chain2),
+    raw_pairs_contacts = polarPairs.polar_pairs(f"{model_id} and {chain1}",
+                                                f"{model_id} and {chain2}",
                                                 cutoff=config["contacts"]["cutoff"],
                                                 angle=config["contacts"]["angle"],
                                                 name=contact_id)
     # get the PDB structure
     parser_pdb = PDB.PDBParser(QUIET=True)
     structure = parser_pdb.get_structure(model_id, config["updated pdb"])
-    model = structure[0]
+    model_pdb = structure[0]
     # search the atoms in contact
     for raw_pairs_contact in raw_pairs_contacts:
         atom1_serial_number = raw_pairs_contact[0]
         atom2_serial_number = raw_pairs_contact[1]
         dist = raw_pairs_contact[2]
-        atom1 = None
-        atom2 = None
-        atoms_found = False
         logging.debug("raw pairs contact: {}".format(raw_pairs_contact))
+
         # get the data from the two contacts atoms
-        for chain in model:
-            for chain_atom in chain.get_atoms():
-                if atom1_serial_number == chain_atom.get_serial_number():
-                    atom1 = chain_atom
-                    logging.debug("\tatom1 ({}) found in {} (chain {}) with full "
-                                  "ID:\t{}".format(atom1_serial_number,
-                                                   config["chains"]["chain {}".format(chain.id)]["name"],
-                                                   chain.id, atom1.get_full_id()))
-                if atom2_serial_number == chain_atom.get_serial_number():
-                    atom2 = chain_atom
-                    logging.debug("\tatom2 ({}) found in {} (chain {}) with full"
-                                  "ID:\t{}".format(atom2_serial_number,
-                                                   config["chains"]["chain {}".format(chain.id)]["name"],
-                                                   chain.id, atom2.get_full_id()))
-                if atom1 is not None and atom2 is not None:
-                    atoms_found = True
-                    break
-            if atoms_found:
-                break
+        atom1 = get_atom_serial_number(model_pdb, chain1, atom1_serial_number, config, "atom1")
+        atom2 = get_atom_serial_number(model_pdb, chain2, atom2_serial_number, config, "atom2")
 
         # set data for atom1
         res1_tuple, res1_data = get_residue_from_atom(atom1_serial_number, atom1, config)
