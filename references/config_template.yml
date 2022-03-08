@@ -50,3 +50,11 @@ contacts:
   # contact distance of atoms between chains in Angstroms
   cutoff: <FLOAT DISTANCE> # optional, default is 4.0
   angle: <FLOAT DEGREE> # optional, default is 63.0
+
+# configuration of the heatmap generated with Altair
+heatmap:
+  # dimensions in pixels
+  width: <INT PIXELS>
+  height: <INT PIXELS>
+  # format: html or json
+  format: <HTML OR JSON>

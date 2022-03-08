@@ -83,9 +83,8 @@ def get_cluster_min_binding_energy(dir_pdb_cluster):
                             min_energy = float(match.group(1))
                             cluster_min_energy = file_split[0]
                         continue
-    logging.info("[{}] {} detected with the minimal binding energy: "
-                 "{}".format(get_cluster_min_binding_energy.__name__.replace("_", " ").title(),
-                             cluster_min_energy, min_energy))
+    logging.info(f"[{get_cluster_min_binding_energy.__name__.replace('_', ' ').title()}] {cluster_min_energy} detected "
+                 f"with the minimal binding energy: {min_energy}")
     return cluster_min_energy
 
 
@@ -109,12 +108,12 @@ def update_config(config_path, cluster, pdb_dir):
     except ImportError as exc:
         logging.error(exc, exc_info=True)
     # get the chains sizes and update the config file
-    config["pdb"] = os.path.join(pdb_dir, "{}.pdb".format(cluster))
+    config["pdb"] = os.path.join(pdb_dir, f"{cluster}.pdb")
     parser_pdb = PDB.PDBParser(QUIET=True)
     structure = parser_pdb.get_structure(cluster_id, config["pdb"])
     model = structure[0]
     for chain in model:
-        config["chains"]["chain {}".format(chain.id)]["length"] = len(list(chain.get_residues()))
+        config["chains"][f"chain {chain.id}"]["length"] = len(list(chain.get_residues()))
 
     return config
 
@@ -135,27 +134,23 @@ def proteins_setup(cluster, config, out_dir, involved_prot):
     :rtype: str
     """
 
-    cmd.do("load {}".format(config["pdb"]))
+    cmd.do(f"load {config['pdb']}")
     cmd.show("cartoon", cluster)
 
     for chain in config["chains"]:
         # set chain color
         cmd.color(config["chains"][chain]["color"], chain)
-        logging.info("[{}] {} ({}): color set to {}.".format(proteins_setup.__name__.replace("_", " ").title(),
-                                                             chain,
-                                                             config["chains"][chain]["name"],
-                                                             config["chains"][chain]["color"]))
+        logging.info(f"[{proteins_setup.__name__.replace('_', ' ').title()}] {chain} "
+                     f"({config['chains'][chain]['name']}): color set to {config['chains'][chain]['color']}.")
         # set regions and colors if any
         if "regions" in config["chains"][chain]:
             for region_id, region_data in config["chains"][chain]["regions"].items():
-                cmd.select(region_id, "{} and resi {}-{}".format(chain, region_data["start"], region_data["end"]))
+                cmd.select(region_id, f"{chain} and resi {region_data['start']}-{region_data['end']}")
                 cmd.color(region_data["color"], region_id)
-                logging.info("\tregion {}: from {} to {}, color set to {}.".format(region_id,
-                                                                                   region_data["start"],
-                                                                                   region_data["end"],
-                                                                                   region_data["color"]))
+                logging.info(f"\tregion {region_id}: from {region_data['start']} to {region_data['end']}, color set to "
+                             f"{region_data['color']}.")
     # record the image
-    path_img = os.path.join(out_dir, "{}.png".format(involved_prot))
+    path_img = os.path.join(out_dir, f"{involved_prot}.png")
     cmd.png(path_img, ray=1, quiet=1)
 
     return path_img
@@ -176,10 +171,10 @@ def licorice_residues(positions, pdb_chain_id, sele):
     # prepare the residue selection
     sele_str = positions[0]
     for idx in range(1, len(positions)):
-        sele_str = "{}+{}".format(sele_str, positions[idx])
-    cmd.select(sele, "{} and resi {}".format(pdb_chain_id, sele_str))
+        sele_str = f"{sele_str}+{positions[idx]}"
+    cmd.select(sele, f"{pdb_chain_id} and resi {sele_str}")
     cmd.show("licorice", sele)
-    cmd.label("{} and name ca".format(sele), "'%s-%s' % (resn,resi)")
+    cmd.label(f"{sele} and name ca", "'%s-%s' % (resn,resi)")
     cmd.disable(sele)
 
 
@@ -200,25 +195,25 @@ def highlight_positions_of_interest(config, out_dir, involved_prot):
     # highlight the POI
     for chain in config["chains"]:
         if "POI" in config["chains"][chain]:
-            logging.info("[{}] {} ({}):".format(highlight_positions_of_interest.__name__.replace("_", " ").title(),
-                                                chain, config["chains"][chain]["name"]))
+            logging.info(f"[{highlight_positions_of_interest.__name__.replace('_', ' ').title()}] {chain} "
+                         f"({config['chains'][chain]['name']}):")
             # update index with alterations from the reference sequence where the positions of interest index come from
             if "alterations" in config["chains"][chain]["POI"]:
                 shift_idx = 0
                 for alter_pos, alter_value in config["chains"][chain]["POI"]["alterations"].items():
-                    cmd.alter("{} and resi {}-{}".format(chain, alter_pos + shift_idx,
-                                                         config["chains"][chain]["length"] + shift_idx),
-                              "resi=str(int(resi){}{})".format("+" if alter_value > 0 else "", alter_value))
-                    logging.info("\talteration of {} from position {} (original "
-                                 "position {}).".format(alter_value, alter_pos + shift_idx, alter_pos))
+                    shifted_pos = alter_pos + shift_idx
+                    cmd.alter(f"{chain} and resi {shifted_pos}-{config['chains'][chain]['length'] + shift_idx}",
+                              f"resi=str(int(resi){'+' if alter_value > 0 else ''}{alter_value})")
+                    logging.info(f"\talteration of {alter_value} from position {shifted_pos} (original "
+                                 f"position {alter_pos}).")
                     shift_idx = shift_idx + alter_value
 
             # highlight the POIs
             licorice_residues(config["chains"][chain]["POI"]["positions"], chain,
-                              "{}_POI".format(config["chains"][chain]["name"].replace(" ", "_")))
-            logging.info("\t{} residues of interest highlighted.".format(config["chains"][chain]["name"]))
+                              f"{config['chains'][chain]['name'].replace(' ', '_')}_POI")
+            logging.info(f"\t{config['chains'][chain]['name']} residues of interest highlighted.")
 
-    path_highlighted_poi_pdb = os.path.join(out_dir, "{}_updated.pdb".format(involved_prot))
+    path_highlighted_poi_pdb = os.path.join(out_dir, f"{involved_prot}_updated.pdb")
     cmd.save(path_highlighted_poi_pdb, state=0)
 
     return path_highlighted_poi_pdb
@@ -245,8 +240,8 @@ def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, pr
     :return: the interface residues.
     :rtype: dict
     """
-    interface_id = "interface_{}".format(id_couple)
-    interface_selection = "{}_sele".format(interface_id)
+    interface_id = f"interface_{id_couple}"
+    interface_selection = f"{interface_id}_sele"
     interface_raw = interfaceResidues.interfaceResidues(cluster, chain1, chain2, 1.0, interface_selection)
     interface = {}
     for item in interface_raw:
@@ -263,11 +258,11 @@ def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, pr
     cmd.zoom(interface_id)
     # disable cluster view to have only interface view for the image
     cmd.disable(id_cluster)
-    path_img = os.path.join(out_dir, "{}.png".format(interface_id))
+    path_img = os.path.join(out_dir, f"{interface_id}.png")
     cmd.png(path_img, ray=1, quiet=1)
     cmd.disable(interface_id)
     cmd.enable(id_cluster)
-    logging.info("\tinterface {} image: {}".format(id_couple, path_img))
+    logging.info(f"\tinterface {id_couple} image: {path_img}")
 
     return interface
 
@@ -362,7 +357,7 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     # search the atoms in contact
     for raw_pairs_contact in raw_pairs_contacts:
         dist = raw_pairs_contact[2]
-        logging.debug("raw pairs contact: {}".format(raw_pairs_contact))
+        logging.debug(f"raw pairs contact: {raw_pairs_contact}")
 
         # get the data from the two contacts atoms
         atom1 = get_atom_serial_number(model_pdb, chain1, raw_pairs_contact[0], config, "atom1")
@@ -414,17 +409,16 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
             if chains[j] not in contacts_to_highlight:
                 contacts_to_highlight[chains[j]] = set()
             prot_j = config["chains"][chains[j]]["name"].replace(" ", "-")
-            couple = "{}-{}".format(prot_i, prot_j)
+            couple = f"{prot_i}-{prot_j}"
             interactions[couple] = {}
-            logging.info("[{}] {}".format(get_interactions.__name__.replace("_", " ").title(), couple))
+            logging.info(f"[{get_interactions.__name__.replace('_', ' ').title()}] {couple}")
             # get the interface if required
             if get_interfaces:
                 interactions[couple] = get_interface_view(chains[i], chains[j], cluster, couple, out_dir, prot_i,
                                                           prot_j)
 
             # get the contacts
-            interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j],
-                                                            "contacts_{}".format(couple))
+            interactions[couple]["contacts"] = get_contacts(cluster, config, chains[i], chains[j], f"contacts_{couple}")
 
             # record the contacts to highlight them
             for tuple_i in interactions[couple]["contacts"]:
@@ -435,19 +429,19 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
     # licorice the contacts and colorize the contacts if intersection with POI
     for chain in chains:
         licorice_residues(sorted(list(contacts_to_highlight[chain])), chain,
-                          "{}_contacts".format(config["chains"][chain]["name"].replace(" ", "_")))
+                          f"{config['chains'][chain]['name'].replace(' ', '_')}_contacts")
         if "POI" in config["chains"][chain] and "positions" in config["chains"][chain]["POI"]:
             intersection = list(contacts_to_highlight[chain] & set(config["chains"][chain]["POI"]["positions"]))
-            logging.info("\t{} has {} contacts residues in Positions of "
-                         "Interest.".format(config["chains"][chain]["name"], len(intersection)))
+            logging.info(f"\t{config['chains'][chain]['name']} has {len(intersection)} contacts residues in Positions "
+                         f"of Interest.")
         else:
             intersection = None
-            logging.info("\t{} has no Positions of Interest set in the configuration "
-                         "file.".format(config["chains"][chain]["name"]))
+            logging.info(f"\t{config['chains'][chain]['name']} has no Positions of Interest set in the configuration "
+                         f"file.")
         if intersection is not None:
-            sele_color = "{} and resi {}".format(chain, intersection[0])
+            sele_color = f"{chain} and resi {intersection[0]}"
             for idx in range(1, len(intersection)):
-                sele_color = "{},{}".format(sele_color, intersection[idx])
+                sele_color = f"{sele_color},{intersection[idx]}"
             cmd.color(config["chains"][chain]["POI"]["contact color"], sele_color)
 
     return interactions
@@ -488,7 +482,7 @@ def contacts_heatmap(data, couple, config, out_dir):
     contacts2 = sorted(list(contacts2))
 
     # create the meshgrid to prepare the dataframe
-    x, y = np.meshgrid(["{}{}".format(t[0], t[1]) for t in contacts1], ["{}{}".format(t[0], t[1]) for t in contacts2])
+    x, y = np.meshgrid([f"{t[0]}{t[1]}" for t in contacts1], [f"{t[0]}{t[1]}" for t in contacts2])
     # create the contact distance list with the minimal distances in the list of distances between 2 residues.
     min_distances = list()
     nb_contacts = list()
@@ -520,8 +514,8 @@ def contacts_heatmap(data, couple, config, out_dir):
                          "Number of contacts displayed in the squares"],
             "subtitleColor": "gray"
         },
-        width=600,
-        height=450
+        width=config["heatmap"]["width"],
+        height=config["heatmap"]["height"]
     )
     # Configure the text with the number of contacts
     distances_values = [v for v in source["minimal_contact_distance"] if not np.isnan(v)]
@@ -537,24 +531,23 @@ def contacts_heatmap(data, couple, config, out_dir):
     plot = heatmap + text
 
     # save the plot
-    out_path_plot = os.path.join(out_dir, "{}_contacts.html".format(couple))
+    out_path_plot = os.path.join(out_dir, f"{couple}_contacts.{config['heatmap']['format']}")
     plot.save(out_path_plot)
-    logging.info("[{}] {} contacts heatmap: {}".format(contacts_heatmap.__name__.replace("_", " ").title(),
-                                                       couple, out_path_plot))
+    logging.info(f"[{contacts_heatmap.__name__.replace('_', ' ').title()}] {couple} contacts heatmap: {out_path_plot}")
 
 
 if __name__ == "__main__":
-    descr = """
-    {} v. {}
+    descr = f"""
+    {os.path.basename(__file__)} v. {__version__}
 
-    Created by {}.
-    Contact: {}
-    {}
+    Created by {__author__}.
+    Contact: {__email__}
+    {__copyright__}
 
     Distributed on an "AS IS" basis without warranties or conditions of any kind, either express or implied.
 
     From a docking performed by HADDOCK, select the better cluster and extract the interface atoms.
-    """.format(os.path.basename(__file__), __version__, __author__, __email__, __copyright__)
+    """
     parser = argparse.ArgumentParser(description=descr, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--out", required=True, type=str, help="the path to the output directory.")
     parser.add_argument("-c", "--config", required=True, type=str, help="the path to the YAML configuration file.")
@@ -580,11 +573,11 @@ if __name__ == "__main__":
     if args.log:
         log_path = args.log
     else:
-        log_path = os.path.join(args.out, "{}.log".format(os.path.splitext(os.path.basename(__file__))[0]))
+        log_path = os.path.join(args.out, f"{os.path.splitext(os.path.basename(__file__))[0]}.log")
     create_log(log_path, args.log_level)
 
-    logging.info("version: {}".format(__version__))
-    logging.info("CMD: {}".format(" ".join(sys.argv)))
+    logging.info(f"version: {__version__}")
+    logging.info(f"CMD: {' '.join(sys.argv)}")
 
     # set background for images
     if args.background_images:
@@ -607,7 +600,7 @@ if __name__ == "__main__":
         proteins_involved.append(configuration["chains"][chain_id]["name"])
     proteins_involved = "-".join(proteins_involved)
     img_path = proteins_setup(cluster_id, configuration, args.out, proteins_involved)
-    logging.info("{} image: {}".format(cluster_id, img_path))
+    logging.info(f"{cluster_id} image: {img_path}")
 
     # highlight mutations
     updated_pdb_path = highlight_positions_of_interest(configuration, args.out, proteins_involved)
@@ -624,4 +617,4 @@ if __name__ == "__main__":
                          args.out)
 
     # save the session
-    cmd.save(os.path.join(args.out, "{}_contacts.pse".format(proteins_involved)), state=0)
+    cmd.save(os.path.join(args.out, f"{proteins_involved}_contacts.pse"), state=0)
