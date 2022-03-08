@@ -7,7 +7,7 @@ Created on 17 Feb. 2022
 __author__ = "Nicolas JEANNE"
 __copyright__ = "GNU General Public License"
 __email__ = "jeanne.n@chu-toulouse.fr"
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 import argparse
 import logging
@@ -438,7 +438,7 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
             intersection = None
             logging.info(f"\t{config['chains'][chain]['name']} has no Positions of Interest set in the configuration "
                          f"file.")
-        if intersection is not None:
+        if intersection:
             sele_color = f"{chain} and resi {intersection[0]}"
             for idx in range(1, len(intersection)):
                 sele_color = f"{sele_color},{intersection[idx]}"
