@@ -7,7 +7,7 @@ Created on 17 Feb. 2022
 __author__ = "Nicolas JEANNE"
 __copyright__ = "GNU General Public License"
 __email__ = "jeanne.n@chu-toulouse.fr"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 import argparse
 import logging
@@ -99,7 +99,6 @@ def update_config(config_path, cluster, pdb_dir):
     :type cluster: str
     :param pdb_dir: the path to the clusters PDB directory.
     :type pdb_dir: str
-    :param is_file:
     :return: the updated configuration file.
     :rtype: dict
     """
@@ -273,52 +272,49 @@ def get_interface_view(chain1, chain2, id_cluster, id_couple, out_dir, prot1, pr
     return interface
 
 
-def get_residue_from_atom(atom_nb, atom, conf, distance=None):
+def get_residue_from_atom(atom, conf, first):
     """
-    Search data from the atom to retrieve the residue and position the atoms belongs to, the nature of the atoms and
-    the distance from the first atom of the contact if the distance is provided.
+    Search data from the atom to retrieve the residue and position the atom belongs to, the nature and the contact
+    distance for the atom of the other residue if the distance is provided.
 
-    :param atom_nb: the serial number of the atom.
-    :type atom_nb: int
     :param atom: the atom data.
-    :type atom: str
+    :type atom: Bio.PDB.Atom
     :param conf: the analysis configuration.
     :type conf: dict
-    :param distance: the distance between the 2 atoms
-    :type distance: float
-    :return: the tuple of the residue position and the residue type, and the dictionary describing the residue with the
+    :param first: if it is the first of the 2 contact atoms
+    :type first: bool
+    :return: the tuple of the residue position and the residue type, the dictionary describing the residue with the
     chain, the atom nature and serial number and the distance if the atom is the second one in the interaction.
     :rtype: tuple, dict
     """
-    chain_name = conf["chains"]["chain {}".format(atom.get_full_id()[2])]["name"]
+    id_chain = atom.get_full_id()[2]
+    chain_name = conf["chains"][f"chain {id_chain}"]["name"]
     residue_position = atom.get_full_id()[3][1]
     residue_type = seq1(atom.get_parent().get_resname())
-    logging.debug("\tatom{} belonging to residue: {}".format(1 if distance is None else 2, residue_type))
-    data = {"chain": chain_name, "atom": {"type": atom.get_id(), "serial number": atom_nb}}
-    if distance is None:
+    logging.debug(f"\tatom{1 if first else 2} {atom.get_id()} belonging to residue: {residue_type}")
+    data = {"chain": chain_name}
+    if first:
         data["contacts with"] = {}
-    else:
-        logging.debug("\tdistance from atom1: {:.2f} Angstroms".format(distance))
-        data["distance"] = distance
 
-    return (residue_position, residue_type),  data
+    return (residue_position, residue_type), data
 
 
 def get_atom_serial_number(model, searched_chain, searched_atom_serial_nb, conf, atom_nb_id):
     """
+    Search the contact atom in the correct chain.
 
-    :param model:
-    :type model:
-    :param searched_chain:
-    :type searched_chain:
-    :param searched_atom_serial_nb:
-    :type searched_atom_serial_nb:
-    :param conf:
-    :type conf:
-    :param atom_nb_id:
-    :type atom_nb_id:
-    :return:
-    :rtype:
+    :param model: the model containing the list of chains.
+    :type model: list
+    :param searched_chain: the identifier of the searched chain.
+    :type searched_chain: str
+    :param searched_atom_serial_nb: the serial number of the contact atom in the chain.
+    :type searched_atom_serial_nb: int
+    :param conf: the configuration of the analysis.
+    :type conf: dict
+    :param atom_nb_id: the atom identifier for method debugging.
+    :type atom_nb_id: str
+    :return: the atom in the chain.
+    :rtype: Bio.PDB.Atom
     """
     atom = None
     for chain in model:
@@ -365,22 +361,25 @@ def get_contacts(model_id, config, chain1, chain2, contact_id):
     model_pdb = structure[0]
     # search the atoms in contact
     for raw_pairs_contact in raw_pairs_contacts:
-        atom1_serial_number = raw_pairs_contact[0]
-        atom2_serial_number = raw_pairs_contact[1]
         dist = raw_pairs_contact[2]
         logging.debug("raw pairs contact: {}".format(raw_pairs_contact))
 
         # get the data from the two contacts atoms
-        atom1 = get_atom_serial_number(model_pdb, chain1, atom1_serial_number, config, "atom1")
-        atom2 = get_atom_serial_number(model_pdb, chain2, atom2_serial_number, config, "atom2")
+        atom1 = get_atom_serial_number(model_pdb, chain1, raw_pairs_contact[0], config, "atom1")
+        atom2 = get_atom_serial_number(model_pdb, chain2, raw_pairs_contact[1], config, "atom2")
 
         # set data for atom1
-        res1_tuple, res1_data = get_residue_from_atom(atom1_serial_number, atom1, config)
+        res1_tuple, res1_data = get_residue_from_atom(atom1, config, first=True)
         if res1_tuple not in contacts:
             contacts[res1_tuple] = res1_data
         # set data for atom2
-        res2_tuple, res2_data = get_residue_from_atom(atom2_serial_number, atom2, config, distance=dist)
-        contacts[res1_tuple]["contacts with"][res2_tuple] = res2_data
+        res2_tuple, res2_data = get_residue_from_atom(atom2, config, first=False)
+        if res2_tuple in contacts[res1_tuple]["contacts with"]:
+            contacts[res1_tuple]["contacts with"][res2_tuple]["distances"].append(dist)
+        else:
+            res2_data["distances"] = [dist]
+            contacts[res1_tuple]["contacts with"][res2_tuple] = res2_data
+        logging.debug(f"\tdistance from atom1: {dist:.2f} Angstroms")
 
     return contacts
 
@@ -454,7 +453,7 @@ def get_interactions(cluster, out_dir, config, get_interfaces):
     return interactions
 
 
-def contacts_heatmap(data, couple, out_dir):
+def contacts_heatmap(data, couple, config, out_dir):
     """
     Create the contacts heatmap plot.
 
@@ -462,6 +461,8 @@ def contacts_heatmap(data, couple, out_dir):
     :type data: dict
     :param couple: the proteins involved.
     :type couple: str
+    :param config: the whole configuration of the analysis.
+    :type config: dict
     :param out_dir: the output directory.
     :type out_dir: str
     """
@@ -469,13 +470,18 @@ def contacts_heatmap(data, couple, out_dir):
     # create the input dataframe
     contacts1 = list()
     contacts2 = set()
+    residues_contacts = {}
     # set up variables to get the last tuples to get access after the for loop to the chains IDs
     tuple1 = None
     tuple2 = None
     for tuple1 in data:
+        t1_str = f"{tuple1[0]}{tuple1[1]}"
         contacts1.append(tuple1)
+        residues_contacts[t1_str] = {}
         for tuple2 in data[tuple1]["contacts with"]:
+            t2_str = f"{tuple2[0]}{tuple2[1]}"
             contacts2.add(tuple2)
+            residues_contacts[t1_str][t2_str] = data[tuple1]["contacts with"][tuple2]["distances"]
     chain1 = data[tuple1]["chain"]
     chain2 = data[tuple1]["contacts with"][tuple2]["chain"]
     contacts1 = sorted(contacts1)
@@ -483,29 +489,57 @@ def contacts_heatmap(data, couple, out_dir):
 
     # create the meshgrid to prepare the dataframe
     x, y = np.meshgrid(["{}{}".format(t[0], t[1]) for t in contacts1], ["{}{}".format(t[0], t[1]) for t in contacts2])
-    # create the contact distance list and get the min and max values
-    z = list()
+    # create the contact distance list with the minimal distances in the list of distances between 2 residues.
+    min_distances = list()
+    nb_contacts = list()
     for tuple2 in contacts2:
         for tuple1 in contacts1:
             if tuple2 in data[tuple1]["contacts with"]:
-                z.append(data[tuple1]["contacts with"][tuple2]["distance"])
+                min_distances.append(min(data[tuple1]["contacts with"][tuple2]["distances"]))
+                nb_contacts.append(len(data[tuple1]["contacts with"][tuple2]["distances"]))
             else:
-                z.append(np.nan)
+                min_distances.append(np.nan)
+                nb_contacts.append(np.nan)
 
     # Convert this grid to columnar data expected by Altair
-    source = pd.DataFrame({chain1.replace(".", "_"): x.ravel(), chain2.replace(".", "_"): y.ravel(), "distance": z})
-    out_path_df = os.path.join(out_dir, "{}_contacts.csv".format(couple))
+    source = pd.DataFrame({chain1.replace(".", "_"): x.ravel(), chain2.replace(".", "_"): y.ravel(),
+                           "minimal_contact_distance": min_distances, "number_of_contacts": nb_contacts})
+    out_path_df = os.path.join(out_dir, f"{couple}_contacts.csv")
     source.to_csv(out_path_df, index=True)
-    # create the altair heatmap
-    heatmap = alt.Chart(data=source, title="{}: contact residues".format(couple)).mark_rect().encode(
+
+    # create the heatmap
+    heatmap = alt.Chart(data=source).mark_rect().encode(
         x=alt.X(chain1.replace(".", "_"), title=chain1),
         y=alt.Y(chain2.replace(".", "_"), title=chain2, sort=None),
-        color=alt.Color("distance:Q", title="Distance (Angstroms)", sort="descending",
+        color=alt.Color("minimal_contact_distance:Q", title="Distance (Angstroms)", sort="descending",
                         scale=alt.Scale(scheme="yelloworangered"))
+    ).properties(
+        title={
+            "text": f"{couple}: contact residues",
+            "subtitle": [f"Threshold {config['contacts']['cutoff']} Angstroms",
+                         "Number of contacts displayed in the squares"],
+            "subtitleColor": "gray"
+        },
+        width=600,
+        height=450
     )
+    # Configure the text with the number of contacts
+    distances_values = [v for v in source["minimal_contact_distance"] if not np.isnan(v)]
+    switch_color = min(distances_values) + (max(distances_values) - min(distances_values)) / 2
+    text = heatmap.mark_text(baseline="middle").encode(
+        text=alt.Text("number_of_contacts"),
+        color=alt.condition(
+            alt.datum.minimal_contact_distance > switch_color,
+            alt.value("black"),
+            alt.value("white")
+        )
+    )
+    plot = heatmap + text
+
+    # save the plot
     out_path_plot = os.path.join(out_dir, "{}_contacts.html".format(couple))
-    heatmap.save(out_path_plot)
-    logging.info("[{}] {} contacts heatmap: {}".format(sys._getframe(  ).f_code.co_name.replace("_", " ").title(),
+    plot.save(out_path_plot)
+    logging.info("[{}] {} contacts heatmap: {}".format(contacts_heatmap.__name__.replace("_", " ").title(),
                                                        couple, out_path_plot))
 
 
@@ -584,7 +618,10 @@ if __name__ == "__main__":
 
     # create the contacts heatmap plot
     for protein_couple in interactions_between_chains:
-        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"], protein_couple, args.out)
+        contacts_heatmap(interactions_between_chains[protein_couple]["contacts"],
+                         protein_couple,
+                         configuration,
+                         args.out)
 
     # save the session
     cmd.save(os.path.join(args.out, "{}_contacts.pse".format(proteins_involved)), state=0)
