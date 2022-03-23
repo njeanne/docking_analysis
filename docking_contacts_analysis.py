@@ -505,7 +505,7 @@ def contacts_heatmap(data, couple, config, out_dir):
     heatmap = alt.Chart(data=source).mark_rect().encode(
         x=alt.X(chain1.replace(".", "_"), title=chain1),
         y=alt.Y(chain2.replace(".", "_"), title=chain2, sort=None),
-        color=alt.Color("minimal_contact_distance:Q", title="Distance (Angstroms)", sort="descending",
+        color=alt.Color("minimal_contact_distance:Q", title="Distance (\u212B)", sort="descending",
                         scale=alt.Scale(scheme="yelloworangered"))
     ).properties(
         title={
